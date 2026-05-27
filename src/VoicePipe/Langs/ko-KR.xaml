@@ -1,0 +1,21 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+    <sys:String x:Key="StrSubtitle">앱 오디오 + 마이크 -> 가상 마이크</sys:String>
+    <sys:String x:Key="StrAppAudioSource">앱 오디오 소스</sys:String>
+    <sys:String x:Key="StrRefreshProcesses">프로세스 새로고침</sys:String>
+    <sys:String x:Key="StrUseThisSource">이 소스 사용</sys:String>
+    <sys:String x:Key="StrCurrentSource">현재 소스：</sys:String>
+    <sys:String x:Key="StrNoSource">선택 없음</sys:String>
+    <sys:String x:Key="StrMicrophoneInput">마이크 입력</sys:String>
+    <sys:String x:Key="StrRefresh">새로고침</sys:String>
+    <sys:String x:Key="StrVolumeControl">볼륨 제어</sys:String>
+    <sys:String x:Key="StrAppAudio">앱 오디오</sys:String>
+    <sys:String x:Key="StrMicrophone">마이크</sys:String>
+    <sys:String x:Key="StrWaveformPreview">파형 미리보기</sys:String>
+    <sys:String x:Key="StrStop">정지</sys:String>
+    <sys:String x:Key="StrStartMixing">믹싱 시작</sys:String>
+    <sys:String x:Key="StrPid">PID:</sys:String>
+    <sys:String x:Key="StrThemeDark">다크</sys:String>
+    <sys:String x:Key="StrThemeLight">라이트</sys:String>
+</ResourceDictionary>

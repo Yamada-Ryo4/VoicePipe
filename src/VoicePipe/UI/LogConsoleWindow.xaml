@@ -1,0 +1,107 @@
+<Window x:Class="VoicePipe.UI.LogConsoleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VoicePipe — 实时控制台"
+        Height="520" Width="960"
+        MinHeight="280" MinWidth="600"
+        Background="#0C0C0C"
+        Closing="Window_Closing">
+
+    <Window.Resources>
+        <Style x:Key="ConBtn" TargetType="Button">
+            <Setter Property="Background"   Value="#1E1E1E"/>
+            <Setter Property="Foreground"   Value="#CCCCCC"/>
+            <Setter Property="BorderBrush"  Value="#333"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"      Value="10,4"/>
+            <Setter Property="FontFamily"   Value="Segoe UI"/>
+            <Setter Property="FontSize"     Value="11"/>
+            <Setter Property="Cursor"       Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#2D2D2D"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed"   Value="True">
+                                <Setter Property="Opacity" Value="0.7"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ── Header ── -->
+        <Border Grid.Row="0" Background="#111" BorderBrush="#222" BorderThickness="0,0,0,1" Padding="14,8">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="🖥" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="VoicePipe 实时控制台" FontFamily="Segoe UI" FontSize="13"
+                               FontWeight="SemiBold" Foreground="#DDD" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <CheckBox x:Name="CbAutoScroll" Content="自动滚动" IsChecked="True"
+                              Foreground="#888" FontFamily="Segoe UI" FontSize="11"
+                              VerticalAlignment="Center" Margin="0,0,16,0"/>
+                    <CheckBox x:Name="CbTopmost" Content="置顶" IsChecked="False"
+                              Foreground="#888" FontFamily="Segoe UI" FontSize="11"
+                              VerticalAlignment="Center" Margin="0,0,16,0"
+                              Checked="CbTopmost_Changed" Unchecked="CbTopmost_Changed"/>
+                    <Button Content="清空" Style="{StaticResource ConBtn}" Click="Clear_Click" Margin="0,0,8,0"/>
+                    <Button Content="复制全部" Style="{StaticResource ConBtn}" Click="CopyAll_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ── Log Area ── -->
+        <ScrollViewer x:Name="Scroller" Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Auto"
+                      Background="#0C0C0C"
+                      Padding="4">
+            <RichTextBox x:Name="LogBox"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         IsReadOnly="True"
+                         FontFamily="Consolas"
+                         FontSize="11.5"
+                         Foreground="#CCC"
+                         Padding="8,4"
+                         VerticalScrollBarVisibility="Disabled"
+                         HorizontalScrollBarVisibility="Disabled"
+                         IsDocumentEnabled="True">
+                <RichTextBox.Document>
+                    <FlowDocument x:Name="LogDoc" LineHeight="3" PageWidth="3000"/>
+                </RichTextBox.Document>
+            </RichTextBox>
+        </ScrollViewer>
+
+        <!-- ── Status Bar ── -->
+        <Border Grid.Row="2" Background="#111" BorderBrush="#222" BorderThickness="0,1,0,0" Padding="14,5">
+            <Grid>
+                <TextBlock x:Name="TbStatus" Text="0 行"
+                           FontFamily="Consolas" FontSize="10"
+                           Foreground="#555" VerticalAlignment="Center"/>
+                <TextBlock Text="右键主界面任意处 → 打开控制台"
+                           FontFamily="Segoe UI" FontSize="10"
+                           Foreground="#333" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

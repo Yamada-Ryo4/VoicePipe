@@ -1,0 +1,21 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+    <sys:String x:Key="StrSubtitle">极简 App 音频 + 麦克风 → 虚拟麦克风</sys:String>
+    <sys:String x:Key="StrAppAudioSource">App 音频源</sys:String>
+    <sys:String x:Key="StrRefreshProcesses">刷新进程</sys:String>
+    <sys:String x:Key="StrUseThisSource">✔  使用此源</sys:String>
+    <sys:String x:Key="StrCurrentSource">当前音频源：</sys:String>
+    <sys:String x:Key="StrNoSource">未选择</sys:String>
+    <sys:String x:Key="StrMicrophoneInput">麦克风输入</sys:String>
+    <sys:String x:Key="StrRefresh">刷新</sys:String>
+    <sys:String x:Key="StrVolumeControl">音量控制</sys:String>
+    <sys:String x:Key="StrAppAudio">软件音频</sys:String>
+    <sys:String x:Key="StrMicrophone">麦克风</sys:String>
+    <sys:String x:Key="StrWaveformPreview">波形预览</sys:String>
+    <sys:String x:Key="StrStop">停止</sys:String>
+    <sys:String x:Key="StrStartMixing">开始混音</sys:String>
+    <sys:String x:Key="StrPid">PID:</sys:String>
+    <sys:String x:Key="StrThemeDark">暗色</sys:String>
+    <sys:String x:Key="StrThemeLight">亮色</sys:String>
+</ResourceDictionary>
