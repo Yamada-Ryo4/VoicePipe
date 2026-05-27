@@ -13,6 +13,12 @@ namespace VoicePipe.Audio;
 ///    激活 IAudioClient，获取特定 PID 的音频流。
 /// 2. 完全不捕获其他进程（包括游戏本身）的音频 → 零回声。
 /// 3. 原始扬声器输出不受影响。
+///
+/// 容错机制：
+/// CaptureLoop 被包裹在重试循环中（CaptureLoopWithRetry），
+/// 当 WASAPI 抛出瞬态 COMException（如 E_UNEXPECTED）时自动重试，
+/// 指数退避（1s→2s→4s→5s 上限），最多重试 10 次。
+/// 成功捕获数据后重置重试计数器。
 /// </summary>
 public class LoopbackCapturer : IDisposable
 {
@@ -20,7 +26,21 @@ public class LoopbackCapturer : IDisposable
     private CancellationTokenSource? _cts;
     private bool _disposed;
 
+    // 重试配置
+    private const int MaxRetries = 10;
+    private const int MaxBackoffSeconds = 5;
+
+    // 重试计数器，CaptureLoop 成功后由外层重置
+    private volatile int _consecutiveFailures;
+
     public event EventHandler<float[]>? SamplesAvailable;
+
+    /// <summary>
+    /// 捕获彻底失败事件（超过最大重试次数后触发）。
+    /// string 参数为错误描述信息。
+    /// </summary>
+    public event EventHandler<string>? CaptureFailed;
+
     public WaveFormat OutputFormat { get; } =
         WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
 
@@ -28,9 +48,10 @@ public class LoopbackCapturer : IDisposable
     {
         Stop();
         _cts = new CancellationTokenSource();
+        _consecutiveFailures = 0;
         var token = _cts.Token;
 
-        _captureThread = new Thread(() => CaptureLoop(targetPid, token))
+        _captureThread = new Thread(() => CaptureLoopWithRetry(targetPid, token))
         {
             IsBackground = true,
             Name = $"LoopbackCapture-PID{targetPid}"
@@ -42,12 +63,56 @@ public class LoopbackCapturer : IDisposable
     }
 
     /// <summary>
+    /// 带自动重试的捕获入口。
+    /// 当 CaptureLoop 因 COMException 等瞬态错误退出时，
+    /// 自动重试（指数退避），直到成功或达到最大重试次数。
+    /// </summary>
+    private void CaptureLoopWithRetry(int pid, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested && _consecutiveFailures < MaxRetries)
+        {
+            try
+            {
+                CaptureLoop(pid, token);
+                // CaptureLoop 正常退出 = 被 CancellationToken 取消
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                _consecutiveFailures++;
+                int delaySeconds = Math.Min((int)Math.Pow(2, _consecutiveFailures - 1), MaxBackoffSeconds);
+                Serilog.Log.Warning(ex,
+                    "LoopbackCapturer: 捕获失败（第 {N}/{Max} 次），{D}s 后重试 PID={Pid}",
+                    _consecutiveFailures, MaxRetries, delaySeconds, pid);
+
+                // 等待退避时间（如果被取消则立即退出）
+                if (token.WaitHandle.WaitOne(TimeSpan.FromSeconds(delaySeconds)))
+                    return;
+            }
+        }
+
+        if (_consecutiveFailures >= MaxRetries && !token.IsCancellationRequested)
+        {
+            var msg = $"应用音频捕获失败（PID={pid}），已重试 {MaxRetries} 次";
+            Serilog.Log.Error("LoopbackCapturer: {Msg}", msg);
+            CaptureFailed?.Invoke(this, msg);
+        }
+    }
+
+    /// <summary>
     /// 核心捕获循环：通过 COM 接口激活 WASAPI Per-Process Loopback。
+    /// 异常直接向上抛出，由 CaptureLoopWithRetry 处理重试逻辑。
     /// </summary>
     private unsafe void CaptureLoop(int pid, CancellationToken token)
     {
         IAudioClient? audioClient = null;
+        IAudioCaptureClient? captureClient = null;
         IntPtr eventHandle = IntPtr.Zero;
+        bool started = false;
         try
         {
             // 激活 Per-Process Loopback IAudioClient
@@ -78,17 +143,21 @@ public class LoopbackCapturer : IDisposable
 
             if (hresult < 0) Marshal.ThrowExceptionForHR(hresult);
 
-            // 获取 IAudioCaptureClient
+            // 获取 IAudioCaptureClient — 必须在 finally 中释放！
             var captureGuid = typeof(IAudioCaptureClient).GUID;
             audioClient.GetService(ref captureGuid, out object captureObj);
-            var captureClient = (IAudioCaptureClient)captureObj;
+            captureClient = (IAudioCaptureClient)captureObj;
 
             // 创建事件句柄
             eventHandle = CreateEventW(IntPtr.Zero, false, false, null);
             audioClient.SetEventHandle(eventHandle);
             audioClient.Start();
+            started = true;
 
             Serilog.Log.Information("LoopbackCapturer: WASAPI 流已启动");
+
+            // 成功启动 → 重置连续失败计数
+            _consecutiveFailures = 0;
 
             while (!token.IsCancellationRequested)
             {
@@ -133,20 +202,32 @@ public class LoopbackCapturer : IDisposable
                     captureClient.GetNextPacketSize(out packetSize);
                 }
             }
-
-            audioClient.Stop();
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            Serilog.Log.Error(ex, "LoopbackCapturer: 捕获循环异常");
-        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { throw; }
         finally
         {
+            // ★ 必须按正确顺序释放所有 COM 对象，否则 Windows 认为旧会话仍活着
+            // 顺序：Stop → 释放 CaptureClient → 释放 AudioClient → 关闭事件 → CoUninitialize
+            if (started)
+            {
+                try { audioClient?.Stop(); } catch { }
+            }
+
+            if (captureClient != null)
+            {
+                try { Marshal.ReleaseComObject(captureClient); } catch { }
+                captureClient = null;
+            }
+
+            if (audioClient != null)
+            {
+                try { Marshal.ReleaseComObject(audioClient); } catch { }
+                audioClient = null;
+            }
+
             if (eventHandle != IntPtr.Zero)
                 CloseHandle(eventHandle);
-            if (audioClient != null)
-                Marshal.ReleaseComObject(audioClient);
         }
     }
 
@@ -180,11 +261,8 @@ public class LoopbackCapturer : IDisposable
 
         try
         {
-            // IAudioClient GUID — 必须用 IAudioClient 而非 IAudioClient3，
-            // 因为许多音频驱动只实现了 IAudioClient 接口
             var audioClientGuid = new Guid("1CB9AD4C-DBFA-4c32-B178-C2F568A703B2");
 
-            // 使用 ActivateAudioInterfaceAsync（Win10 19041+）
             var completionHandler = new ActivateAudioInterfaceCompletionHandler();
             ActivateAudioInterfaceAsync(
                 VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
@@ -193,7 +271,6 @@ public class LoopbackCapturer : IDisposable
                 completionHandler,
                 out _);
 
-            // 等待激活完成
             completionHandler.WaitForCompletion();
 
             completionHandler.GetActivateResult(out int activateHr, out object activatedInterface);
@@ -256,6 +333,14 @@ public class LoopbackCapturer : IDisposable
 
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("ole32.dll")]
+    private static extern int CoInitializeEx(IntPtr pvReserved, uint dwCoInit);
+
+    [DllImport("ole32.dll")]
+    private static extern void CoUninitialize();
+
+    private const uint COINIT_MULTITHREADED = 0x0;
 
     // ────────────────────────────────────────────────────────
     // 原生结构体和接口

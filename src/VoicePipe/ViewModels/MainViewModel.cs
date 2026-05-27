@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Windows;
 using System.Threading.Tasks;
@@ -57,6 +57,16 @@ public partial class MainViewModel : ObservableObject
         _settings = AppSettings.Load();
         AppGain = _settings.AppGain;
         MicGain = _settings.MicGain;
+
+        // 监听应用音频捕获彻底失败（LoopbackCapturer 重试耗尽）
+        _pipeline.CaptureFailed += (_, msg) =>
+        {
+            Application.Current.Dispatcher.BeginInvoke(() =>
+            {
+                StatusText = $"⚠ {msg}";
+                IsRunning = false;
+            });
+        };
 
         _activeSourceName = Application.Current.TryFindResource("StrNoSource") as string ?? "None Selected";
         _activeMicName = Application.Current.TryFindResource("StrNoSource") as string ?? "None Selected";
@@ -216,5 +226,16 @@ public partial class MainViewModel : ObservableObject
     {
         _pipeline.MicGain = value;
         _settings.MicGain = value;
+    }
+
+    /// <summary>
+    /// 完全清理管线（包括保持运行的 LoopbackCapturer），应用退出时调用。
+    /// </summary>
+    public void Cleanup()
+    {
+        _pipeline.Dispose();
+        _refreshTimer.Stop();
+        _waveformTimer.Stop();
+        PeakMonitor.Stop();
     }
 }

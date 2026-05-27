@@ -34,7 +34,7 @@ public partial class MainWindow : Window
         base.OnClosed(e);
         _consoleWindow?.Close();
         if (DataContext is ViewModels.MainViewModel vm)
-            _ = vm.StopPipelineCommand.ExecuteAsync(null);
+            vm.Cleanup(); // 完全清理管线（包括保持运行的 LoopbackCapturer）
     }
 
     private void OpenConsole_Click(object sender, System.Windows.RoutedEventArgs e)
@@ -114,5 +114,15 @@ public partial class MainWindow : Window
         else
             merged.Add(newLang);
         _langDict = newLang;
+    }
+
+    private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = e.Uri.AbsoluteUri,
+            UseShellExecute = true
+        });
+        e.Handled = true;
     }
 }

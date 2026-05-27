@@ -1,78 +1,98 @@
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using System;
 
 namespace VoicePipe.Audio;
 
 /// <summary>
-/// 将混音后的 PCM 数据写入 VB-Cable CABLE Input 虚拟设备。
+/// 将混音引擎（IWaveProvider）直接连接到 VB-Cable CABLE Input 虚拟设备。
+/// Pull 模型：WasapiOut 按需从 AudioMixEngine.Read() 拉取数据。
+/// 使用 WASAPI 替代 WaveOut，避免 Windows 音频路由混淆导致声音输出到扬声器。
 /// </summary>
 public class VirtualMicWriter : IDisposable
 {
-    private WaveOutEvent? _waveOut;
-    private BufferedWaveProvider? _provider;
+    private WasapiOut? _wasapiOut;
+    private MMDevice? _device;
     private bool _disposed;
 
     public static readonly WaveFormat OutputFormat =
         WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
 
-    public void Initialize()
+    /// <summary>
+    /// 初始化并启动输出。直接将 AudioMixEngine 作为数据源。
+    /// </summary>
+    public void Initialize(AudioMixEngine mixEngine)
     {
         Stop();
         try
         {
-            _provider = new BufferedWaveProvider(OutputFormat)
+            _device = FindCableInputDevice();
+            if (_device == null)
             {
-                BufferDuration = TimeSpan.FromMilliseconds(500),
-                DiscardOnBufferOverflow = true,
-            };
+                Serilog.Log.Warning("VirtualMicWriter: 未找到 CABLE Input，将无法输出虚拟麦克风信号。");
+                return;
+            }
 
-            // 查找 CABLE Input 设备
-            int deviceNumber = FindCableInputDevice();
-            _waveOut = new WaveOutEvent { DeviceNumber = deviceNumber, DesiredLatency = 40 };
-            _waveOut.Init(_provider);
-            _waveOut.Play();
-            Serilog.Log.Information("VirtualMicWriter: 初始化完成 设备={Dev} 格式={Rate}Hz/{Ch}ch/Float32",
-                deviceNumber, OutputFormat.SampleRate, OutputFormat.Channels);
+            // 使用 WasapiOut 并指定具体的 MMDevice，防止输出被路由到默认扬声器
+            _wasapiOut = new WasapiOut(
+                _device,
+                AudioClientShareMode.Shared,
+                true,
+                50); // 50ms 延迟
+                
+            _wasapiOut.Init(mixEngine);
+            _wasapiOut.Play();
+            Serilog.Log.Information("VirtualMicWriter: WASAPI 初始化完成 设备={Name} 格式={Rate}Hz/{Ch}ch/Float32",
+                _device.FriendlyName, OutputFormat.SampleRate, OutputFormat.Channels);
         }
-        catch
+        catch (Exception ex)
         {
+            Serilog.Log.Error(ex, "VirtualMicWriter: 初始化失败");
             Stop();
             throw;
         }
     }
 
-    public void Write(byte[] pcmData)
+    private static MMDevice? FindCableInputDevice()
     {
-        _provider?.AddSamples(pcmData, 0, pcmData.Length);
-    }
-
-    private static int FindCableInputDevice()
-    {
-        int total = WaveOut.DeviceCount;
-        Serilog.Log.Debug("VirtualMicWriter: 扫描 WaveOut 设备，共 {N} 个", total);
-        for (int i = 0; i < total; i++)
+        try
         {
-            var name = WaveOut.GetCapabilities(i).ProductName;
-            Serilog.Log.Debug("  WaveOut[{I}] = {Name}", i, name);
-            if (name.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
+            using var enumerator = new MMDeviceEnumerator();
+            var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+            Serilog.Log.Debug("VirtualMicWriter: 扫描 WASAPI Render 设备，共 {N} 个", devices.Count);
+            
+            foreach (var device in devices)
             {
-                Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input → 设备[{I}] {Name}", i, name);
-                return i;
+                Serilog.Log.Debug("  WASAPI: {Name}", device.FriendlyName);
+                if (device.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
+                {
+                    Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input → {Name}", device.FriendlyName);
+                    return device;
+                }
             }
         }
-        Serilog.Log.Warning("VirtualMicWriter: 未找到 CABLE Input，回落到默认设备(-1)，混音将输出到系统默认音频");
-        return -1;
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "VirtualMicWriter: 查找 CABLE Input 设备异常");
+        }
+        
+        return null;
     }
 
     public static bool IsCableInputAvailable()
     {
-        for (int i = 0; i < WaveOut.DeviceCount; i++)
+        try
         {
-            if (WaveOut.GetCapabilities(i).ProductName.Contains("CABLE Input",
-                    StringComparison.OrdinalIgnoreCase))
-                return true;
+            using var enumerator = new MMDeviceEnumerator();
+            var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+            foreach (var device in devices)
+            {
+                if (device.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
         }
+        catch { }
         return false;
     }
 
@@ -80,12 +100,14 @@ public class VirtualMicWriter : IDisposable
     {
         try
         {
-            _waveOut?.Stop();
-            _waveOut?.Dispose();
+            _wasapiOut?.Stop();
+            _wasapiOut?.Dispose();
         }
         catch { }
-        _waveOut = null;
-        _provider = null;
+        _wasapiOut = null;
+        
+        _device?.Dispose();
+        _device = null;
     }
 
     public void Dispose()
