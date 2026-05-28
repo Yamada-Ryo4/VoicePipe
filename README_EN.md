@@ -19,6 +19,16 @@ VoicePipe is a lightweight, high-performance audio routing and mixing utility fo
 
 This is incredibly useful for streamers, podcasters, and gamers who want to share game audio or music through voice chat applications (like Discord, Zoom, or Teams) without transmitting system-wide sounds (like notification pings or background videos).
 
+## ⬇️ Download & Usage
+
+- **Direct Download**: [VoicePipeSetup.exe](https://github.com/Yamada-Ryo4/VoicePipe/releases/download/Release/VoicePipeSetup.exe) (Includes runtime and virtual audio cable driver. One-click install)
+- **How to Use**:
+  1. Install and open VoicePipe.
+  2. Select the application you want to capture from the top dropdown (e.g., a game or music player).
+  3. Select your physical microphone from the second dropdown.
+  4. Click **START** to begin mixing.
+  5. In your voice chat app (Discord, Zoom, Teams, etc.), set your input microphone to **CABLE Output (VB-Audio Virtual Cable)**.
+
 ## Features
 
 - **Per-Process Audio Isolation**: Uses the Windows 10/11 WASAPI Per-Process Loopback API to capture audio from exactly one application, ignoring all other system sounds.
