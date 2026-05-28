@@ -27,7 +27,7 @@ public class VirtualMicWriter : IDisposable
         Stop();
         try
         {
-            _device = FindCableInputDevice();
+            _device = FindCableInputDevice(logFound: true);
             if (_device == null)
             {
                 Serilog.Log.Warning("VirtualMicWriter: 未找到 CABLE Input，将无法输出虚拟麦克风信号。");
@@ -39,7 +39,7 @@ public class VirtualMicWriter : IDisposable
                 _device,
                 AudioClientShareMode.Shared,
                 true,
-                50); // 50ms 延迟
+                10); // 10ms 超低延迟
                 
             _wasapiOut.Init(mixEngine);
             _wasapiOut.Play();
@@ -54,22 +54,22 @@ public class VirtualMicWriter : IDisposable
         }
     }
 
-    private static MMDevice? FindCableInputDevice()
+    private static MMDevice? FindCableInputDevice(bool logFound = false)
     {
         try
         {
             using var enumerator = new MMDeviceEnumerator();
             var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
-            Serilog.Log.Debug("VirtualMicWriter: 扫描 WASAPI Render 设备，共 {N} 个", devices.Count);
             
             foreach (var device in devices)
             {
-                Serilog.Log.Debug("  WASAPI: {Name}", device.FriendlyName);
                 if (device.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
                 {
-                    Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input → {Name}", device.FriendlyName);
+                    if (logFound)
+                        Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input → {Name}", device.FriendlyName);
                     return device;
                 }
+                device.Dispose();
             }
         }
         catch (Exception ex)
@@ -82,18 +82,8 @@ public class VirtualMicWriter : IDisposable
 
     public static bool IsCableInputAvailable()
     {
-        try
-        {
-            using var enumerator = new MMDeviceEnumerator();
-            var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
-            foreach (var device in devices)
-            {
-                if (device.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-        }
-        catch { }
-        return false;
+        using var device = FindCableInputDevice();
+        return device != null;
     }
 
     public void Stop()

@@ -17,6 +17,9 @@ public partial class AudioProcessItem : ObservableObject
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string? _iconPath;
     [ObservableProperty] private float _peakLevel;
+
+    /// <summary>ComboBox 显示文本</summary>
+    public string DisplayName => $"{Name}  (PID {Pid})";
 }
 
 public partial class MicDeviceItem : ObservableObject
@@ -35,13 +38,9 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private ObservableCollection<AudioProcessItem> _processes = new();
     [ObservableProperty] private AudioProcessItem? _selectedProcess;
-    [ObservableProperty] private AudioProcessItem? _activeProcess;
-    [ObservableProperty] private string _activeSourceName = "";
 
     [ObservableProperty] private ObservableCollection<MicDeviceItem> _micDevices = new();
     [ObservableProperty] private MicDeviceItem? _selectedMic;
-    [ObservableProperty] private MicDeviceItem? _activeMic;
-    [ObservableProperty] private string _activeMicName = "";
 
     [ObservableProperty] private float _appGain = 0.75f;
     [ObservableProperty] private float _micGain = 1.0f;
@@ -68,11 +67,8 @@ public partial class MainViewModel : ObservableObject
             });
         };
 
-        _activeSourceName = Application.Current.TryFindResource("StrNoSource") as string ?? "None Selected";
-        _activeMicName = Application.Current.TryFindResource("StrNoSource") as string ?? "None Selected";
-
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        _refreshTimer.Tick += (_, _) => { RefreshProcesses(); RefreshMicDevices(); };
+        _refreshTimer.Tick += async (_, _) => await RefreshAllAsync();
         _refreshTimer.Start();
 
         _waveformTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
@@ -81,9 +77,8 @@ public partial class MainViewModel : ObservableObject
 
         PeakMonitor.Start();
 
-        RefreshProcesses();
-        RefreshMicDevices();
-        IsCableAvailable = VirtualMicWriter.IsCableInputAvailable();
+        // 初始加载也走异步，避免构造函数卡 UI
+        _ = RefreshAllAsync();
     }
 
     private void WaveformTimer_Tick(object? sender, EventArgs e)
@@ -104,77 +99,56 @@ public partial class MainViewModel : ObservableObject
         WaveformData = WaveformAnalyzer.GetSnapshot();
     }
 
-    [RelayCommand]
-    private void RefreshProcesses()
+    /// <summary>
+    /// 所有重量级 COM 枚举操作在后台线程执行，只把结果带回 UI 线程更新集合。
+    /// 彻底消除每 2 秒的 UI 冻结。
+    /// </summary>
+    private async Task RefreshAllAsync()
     {
-        var list = ProcessEnumerator.GetActiveAudioProcesses();
-        
-        var toRemove = Processes.Where(p => !list.Any(l => l.Pid == p.Pid)).ToList();
-        foreach (var r in toRemove) Processes.Remove(r);
+        // ★ 在后台线程执行所有 COM 操作
+        var (processList, micList, cableAvail) = await Task.Run(() =>
+        {
+            var procs = ProcessEnumerator.GetActiveAudioProcesses();
+            var mics = MicCapturer.GetAvailableMics();
+            var cable = VirtualMicWriter.IsCableInputAvailable();
+            return (procs, mics, cable);
+        });
 
-        foreach (var l in list)
+        // ★ 回到 UI 线程更新 ObservableCollection
+        IsCableAvailable = cableAvail;
+
+        // 进程列表差异更新
+        var procToRemove = Processes.Where(p => !processList.Any(l => l.Pid == p.Pid)).ToList();
+        foreach (var r in procToRemove) Processes.Remove(r);
+        foreach (var l in processList)
         {
             if (!Processes.Any(p => p.Pid == l.Pid))
                 Processes.Add(new AudioProcessItem { Pid = l.Pid, Name = l.Name, IconPath = l.IconPath });
         }
-
         if (SelectedProcess == null)
-        {
             SelectedProcess = Processes.FirstOrDefault(p => p.Name.Equals(_settings.LastAppProcessName, StringComparison.OrdinalIgnoreCase)) ?? Processes.FirstOrDefault();
-        }
 
-        if (ActiveProcess == null && SelectedProcess != null && !string.IsNullOrEmpty(_settings.LastAppProcessName))
-            ConfirmSource();
-    }
-
-    [RelayCommand]
-    private void ConfirmSource()
-    {
-        if (SelectedProcess == null) return;
-        ActiveProcess = SelectedProcess;
-        ActiveSourceName = $"{SelectedProcess.Name}  (PID {SelectedProcess.Pid})";
-    }
-
-    [RelayCommand]
-    private void RefreshMicDevices()
-    {
-        var list = MicCapturer.GetAvailableMics();
-        
-        var toRemove = MicDevices.Where(m => !list.Any(l => l.Id == m.Id)).ToList();
-        foreach (var r in toRemove) MicDevices.Remove(r);
-
-        foreach (var l in list)
+        // 麦克风列表差异更新
+        var micToRemove = MicDevices.Where(m => !micList.Any(l => l.Id == m.Id)).ToList();
+        foreach (var r in micToRemove) MicDevices.Remove(r);
+        foreach (var l in micList)
         {
             if (!MicDevices.Any(m => m.Id == l.Id))
                 MicDevices.Add(new MicDeviceItem { Id = l.Id, Name = l.Name });
         }
-
         if (SelectedMic == null)
-        {
             SelectedMic = MicDevices.FirstOrDefault(m => m.Id == _settings.LastMicDeviceId) ?? MicDevices.FirstOrDefault();
-        }
-
-        if (ActiveMic == null && SelectedMic != null && !string.IsNullOrEmpty(_settings.LastMicDeviceId))
-            ConfirmMic();
-    }
-
-    [RelayCommand]
-    private void ConfirmMic()
-    {
-        if (SelectedMic == null) return;
-        ActiveMic = SelectedMic;
-        ActiveMicName = SelectedMic.Name;
     }
 
     [RelayCommand]
     private async Task StartPipeline()
     {
-        if (ActiveProcess == null)
+        if (SelectedProcess == null)
         {
             StatusText = Application.Current.TryFindResource("StrNoSource") as string ?? "Please select an app source";
             return;
         }
-        if (ActiveMic == null)
+        if (SelectedMic == null)
         {
             StatusText = Application.Current.TryFindResource("StrNoSource") as string ?? "Please select a microphone";
             return;
@@ -190,13 +164,13 @@ public partial class MainViewModel : ObservableObject
             StatusText = "Starting...";
             _pipeline.AppGain = AppGain;
             _pipeline.MicGain = MicGain;
-            await _pipeline.StartAsync(ActiveProcess.Pid, ActiveMic.Id);
+            await _pipeline.StartAsync(SelectedProcess.Pid, SelectedMic.Id);
             IsRunning = true;
-            StatusText = $"Running: {ActiveProcess.Name} + Mic";
+            StatusText = $"Running: {SelectedProcess.Name} + Mic";
 
-            _settings.LastAppProcessName = ActiveProcess.Name;
-            _settings.LastAppPid = ActiveProcess.Pid;
-            _settings.LastMicDeviceId = ActiveMic.Id;
+            _settings.LastAppProcessName = SelectedProcess.Name;
+            _settings.LastAppPid = SelectedProcess.Pid;
+            _settings.LastMicDeviceId = SelectedMic.Id;
             _settings.AppGain = AppGain;
             _settings.MicGain = MicGain;
             _settings.Save();
@@ -226,6 +200,18 @@ public partial class MainViewModel : ObservableObject
     {
         _pipeline.MicGain = value;
         _settings.MicGain = value;
+    }
+
+    partial void OnSelectedProcessChanged(AudioProcessItem? value)
+    {
+        if (IsRunning && value != null && SelectedMic != null)
+            _ = StartPipelineCommand.ExecuteAsync(null);
+    }
+
+    partial void OnSelectedMicChanged(MicDeviceItem? value)
+    {
+        if (IsRunning && value != null && SelectedProcess != null)
+            _ = StartPipelineCommand.ExecuteAsync(null);
     }
 
     /// <summary>

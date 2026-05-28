@@ -137,7 +137,10 @@ public class MicCapturer : IDisposable
             using var enumerator = new MMDeviceEnumerator();
             var col = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
             for (int i = 0; i < col.Count; i++)
-                result.Add(new MicInfo(col[i].ID, col[i].FriendlyName));
+            {
+                using var dev = col[i];
+                result.Add(new MicInfo(dev.ID, dev.FriendlyName));
+            }
         }
         catch (Exception ex)
         {

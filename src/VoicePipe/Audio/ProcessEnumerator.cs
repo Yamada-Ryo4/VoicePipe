@@ -22,7 +22,7 @@ public class ProcessEnumerator
 
             for (int i = 0; i < sessions.Count; i++)
             {
-                var session = sessions[i];
+                using var session = sessions[i];
                 var pid = (int)session.GetProcessID;
                 if (pid == 0 || pid == selfPid) continue; // 跳过系统进程和自身（防止反馈环路）
 

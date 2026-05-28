@@ -27,7 +27,7 @@ public partial class App : Application
 
         // 初始化 Serilog
         Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
+            .MinimumLevel.Information()
             .WriteTo.File(
                 System.IO.Path.Combine(AppContext.BaseDirectory, "logs", "voicepipe.log"),
                 rollingInterval: RollingInterval.Day,

@@ -1,5 +1,6 @@
 using NAudio.CoreAudioApi;
 using VoicePipe.Core;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace VoicePipe.Audio;
@@ -11,7 +12,7 @@ public class PipelineManager : IDisposable
     // Windows Per-Process Loopback API 不允许对已关闭的 PID 重新激活（E_UNEXPECTED），
     // 所以必须保持所有用过的 capturer 在后台运行，切换时直接复用。
     private readonly Dictionary<int, LoopbackCapturer> _loopbackCache = new();
-    private int _currentPid;
+    private volatile int _currentPid;
     private MicCapturer? _micCapture;
     private VirtualMicWriter? _writer;
 
@@ -34,16 +35,23 @@ public class PipelineManager : IDisposable
 
     public async Task StartAsync(int targetPid, string micId)
     {
-        // 先停 Writer 和 Mic
-        _writer?.Stop();
-        _writer = null;
-        _micCapture?.Dispose();
-        _micCapture = null;
+        // ★ 后台线程执行所有重量级 COM 操作，避免 UI 冻结
+        await Task.Run(() =>
+        {
+            // 清理已退出进程的缓存会话
+            PurgeDeadSessions();
+
+            // 停止旧的 Writer（WasapiOut.Stop 是同步 COM 调用）
+            _writer?.Stop();
+            _writer = null;
+            _micCapture?.Dispose();
+            _micCapture = null;
+        });
 
         // 切换当前 PID（影响哪个 capturer 的数据会被喂入 mixer）
         _currentPid = targetPid;
 
-        // 查找或创建该 PID 的 LoopbackCapturer
+        // 查找或创建该 PID 的 LoopbackCapturer（已在后台线程）
         if (!_loopbackCache.TryGetValue(targetPid, out var capturer))
         {
             capturer = new LoopbackCapturer();
@@ -66,10 +74,12 @@ public class PipelineManager : IDisposable
         // 重置混音器
         _mixer.Reset();
 
-        // 重建 Writer 和 Mic
-        _writer = new VirtualMicWriter();
-        _writer.Initialize(_mixer);
+        // ★ Writer 初始化（FindCableInputDevice 枚举 + WasapiOut 构造）移到后台线程
+        var writer = new VirtualMicWriter();
+        await Task.Run(() => writer.Initialize(_mixer));
+        _writer = writer;
 
+        // MicCapturer.Start 内部已使用 Task.Run，不会阻塞
         _micCapture = new MicCapturer();
         _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Format);
         _micCapture.Start(micId);
@@ -87,7 +97,38 @@ public class PipelineManager : IDisposable
         _micCapture?.Dispose();
         _micCapture = null;
 
+        _currentPid = 0;
+
         await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 扫描缓存，清理已退出进程的 LoopbackCapturer 会话。
+    /// 防止用户切换多个音频源后，旧进程退出但 capturer 仍在后台空转导致内存泄漏。
+    /// </summary>
+    private void PurgeDeadSessions()
+    {
+        var deadPids = new List<int>();
+        foreach (var pid in _loopbackCache.Keys)
+        {
+            try
+            {
+                using var proc = Process.GetProcessById(pid);
+                // 进程仍然存活，保留
+            }
+            catch
+            {
+                // GetProcessById 抛异常 = 进程已退出
+                deadPids.Add(pid);
+            }
+        }
+
+        foreach (var pid in deadPids)
+        {
+            Serilog.Log.Information("PipelineManager: 清理已退出进程 PID={Pid} 的 Loopback 会话", pid);
+            try { _loopbackCache[pid].Dispose(); } catch { }
+            _loopbackCache.Remove(pid);
+        }
     }
 
     /// <summary>

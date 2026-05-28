@@ -159,6 +159,47 @@
     <Style TargetType="Slider">
         <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
         <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid VerticalAlignment="Center">
+                        <!-- 轨道背景 -->
+                        <Border Height="4" CornerRadius="2"
+                                Background="{TemplateBinding Background}"
+                                VerticalAlignment="Center"/>
+                        <Canvas Height="4" VerticalAlignment="Center">
+                            <!-- 已填充部分 -->
+                            <Border x:Name="TrackFill" Height="4" CornerRadius="2"
+                                    Background="{TemplateBinding Foreground}"
+                                    Width="0"/>
+                        </Canvas>
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge"
+                                              Opacity="0" Height="24" Focusable="False"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge"
+                                              Opacity="0" Height="24" Focusable="False"/>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Width="16" Height="16" Cursor="Hand">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Ellipse Width="16" Height="16"
+                                                     Fill="{StaticResource AccentBrush}"
+                                                     Stroke="{StaticResource BgDeepBrush}"
+                                                     StrokeThickness="2"/>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ═══ ScrollBar — 竖向胶囊 / 横向胶囊 ═══ -->

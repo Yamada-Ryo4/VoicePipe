@@ -17,8 +17,11 @@ public class AudioMixEngine : IWaveProvider
     private readonly RingBuffer _micBuffer = new(44100 * 2 * 200 / 1000);
 
     // AppGain / MicGain：各自信源的直接幅度系数，相互独立。
-    public float AppGain { get; set; } = 0.75f;
-    public float MicGain { get; set; } = 0.75f;
+    // volatile 确保播放线程始终读到 UI 线程写入的最新值，防止 JIT 缓存旧值。
+    private volatile float _appGain = 0.75f;
+    private volatile float _micGain = 0.75f;
+    public float AppGain { get => _appGain; set => _appGain = value; }
+    public float MicGain { get => _micGain; set => _micGain = value; }
 
     // 软限幅阈值（-3 dBFS = 0.708）
     private const float LimiterThreshold = 0.708f;
@@ -56,7 +59,7 @@ public class AudioMixEngine : IWaveProvider
         {
             int toRead = Math.Min(appAvail, samplesNeeded);
             var appData = _appBuffer.Read(toRead);
-            Array.Copy(appData, app, toRead);
+            Array.Copy(appData, app, appData.Length);
         }
 
         // Mic：读可用数据，不足补零
@@ -66,7 +69,7 @@ public class AudioMixEngine : IWaveProvider
         {
             int toRead = Math.Min(micAvail, samplesNeeded);
             var micData = _micBuffer.Read(toRead);
-            Array.Copy(micData, mic, toRead);
+            Array.Copy(micData, mic, micData.Length);
         }
 
         // 混音 + 软限幅 → 写入输出 buffer

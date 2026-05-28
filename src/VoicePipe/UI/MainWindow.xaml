@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:VoicePipe.ViewModels"
         xmlns:ui="clr-namespace:VoicePipe.UI"
-        Title="VoicePipe" Height="820" Width="780"
-        MinHeight="720" MinWidth="680"
+        Title="VoicePipe" Height="580" Width="780"
+        MinHeight="500" MinWidth="680"
         Background="{DynamicResource BgDeepBrush}"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize">
@@ -59,7 +59,18 @@
                             <SolidColorBrush Color="{Binding IsCableAvailable, Converter={x:Static ui:BoolToColorConverter.Instance}}"/>
                         </Ellipse.Fill>
                     </Ellipse>
-                    <TextBlock FontSize="11" Foreground="{DynamicResource TextSecBrush}" Text="{Binding IsCableAvailable, StringFormat={}VB-Cable {0}}"/>
+                    <TextBlock FontSize="11" Foreground="{DynamicResource TextSecBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="VB-Cable ✗"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCableAvailable}" Value="True">
+                                        <Setter Property="Text" Value="VB-Cable ✓"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </StackPanel>
 
                 <Border Grid.Column="2" CornerRadius="14"
@@ -107,31 +118,25 @@
                 <Border Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                         CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0" Text="{DynamicResource StrAppAudioSource}"
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrAppAudioSource}"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <ListBox Grid.Row="1"
-                                 ItemsSource="{Binding Processes}"
-                                 SelectedItem="{Binding SelectedProcess}"
-                                 Height="120">
-                            <ListBox.ItemTemplate>
+                        <ComboBox ItemsSource="{Binding Processes}"
+                                  SelectedItem="{Binding SelectedProcess}"
+                                  Height="36" FontSize="12"
+                                  Foreground="{DynamicResource TextPrimaryBrush}"
+                                  Background="{DynamicResource BgCardBrush}">
+                            <ComboBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Margin="2,2">
+                                    <Grid Margin="2,3" MinWidth="300">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="60"/>
-                                            <ColumnDefinition Width="60"/>
+                                            <ColumnDefinition Width="70"/>
+                                            <ColumnDefinition Width="45"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimaryBrush}"
                                                        FontSize="12" VerticalAlignment="Center"/>
                                             <TextBlock Text="{DynamicResource StrPid}" FontSize="10"
@@ -141,14 +146,14 @@
                                                        Foreground="{DynamicResource TextSecBrush}"
                                                        VerticalAlignment="Center" Margin="2,0,0,0"/>
                                         </StackPanel>
-                                        <Grid Grid.Column="1" VerticalAlignment="Center">
+                                        <Grid Grid.Column="1" VerticalAlignment="Center" Margin="6,0">
                                             <Rectangle Height="4" Fill="{DynamicResource BorderBrush}" RadiusX="2" RadiusY="2"/>
                                             <Rectangle Height="4" RadiusX="2" RadiusY="2"
                                                        HorizontalAlignment="Left"
                                                        Fill="{DynamicResource AccentBrush}">
                                                 <Rectangle.Width>
                                                     <Binding Path="PeakLevel" Converter="{x:Static ui:PeakToWidthConverter.Instance}"
-                                                             ConverterParameter="52"/>
+                                                             ConverterParameter="60"/>
                                                 </Rectangle.Width>
                                             </Rectangle>
                                         </Grid>
@@ -159,82 +164,44 @@
                                                    VerticalAlignment="Center"/>
                                     </Grid>
                                 </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-
-                        <Grid Grid.Row="2" Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="16"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0"
-                                    Content="{DynamicResource StrRefreshProcesses}"
-                                    Style="{DynamicResource GhostButton}"
-                                    Command="{Binding RefreshProcessesCommand}"
-                                    Padding="12,6"/>
-                            <Button Grid.Column="2"
-                                    Content="{DynamicResource StrUseThisSource}"
-                                    Command="{Binding ConfirmSourceCommand}"
-                                    Style="{DynamicResource PrimaryButton}"
-                                    HorizontalAlignment="Right"
-                                    Padding="16,6"/>
-                        </Grid>
-
-                        <Border Grid.Row="3" Margin="0,10,0,0"
-                                Background="{DynamicResource BgCardBrush}"
-                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                CornerRadius="6" Padding="14,9">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{DynamicResource StrCurrentSource}" FontSize="12"
-                                           Foreground="{DynamicResource TextSecBrush}"
-                                           VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding ActiveSourceName}" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
                 </Border>
 
                 <!-- ── 麦克风输入 ── -->
                 <Border Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                         CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0" Text="{DynamicResource StrMicrophoneInput}"
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrMicrophoneInput}"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <ListBox Grid.Row="1"
-                                 ItemsSource="{Binding MicDevices}"
-                                 SelectedItem="{Binding SelectedMic}"
-                                 Height="120">
-                            <ListBox.ItemTemplate>
+                        <ComboBox ItemsSource="{Binding MicDevices}"
+                                  SelectedItem="{Binding SelectedMic}"
+                                  Height="36" FontSize="12"
+                                  Foreground="{DynamicResource TextPrimaryBrush}"
+                                  Background="{DynamicResource BgCardBrush}">
+                            <ComboBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Margin="2,2">
+                                    <Grid Margin="2,3" MinWidth="300">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="60"/>
-                                            <ColumnDefinition Width="60"/>
+                                            <ColumnDefinition Width="70"/>
+                                            <ColumnDefinition Width="45"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="{DynamicResource TextPrimaryBrush}"
-                                                   FontSize="12" VerticalAlignment="Center"/>
-                                        <Grid Grid.Column="1" VerticalAlignment="Center">
+                                                   FontSize="12" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <Grid Grid.Column="1" VerticalAlignment="Center" Margin="6,0">
                                             <Rectangle Height="4" Fill="{DynamicResource BorderBrush}" RadiusX="2" RadiusY="2"/>
                                             <Rectangle Height="4" RadiusX="2" RadiusY="2"
                                                        HorizontalAlignment="Left"
                                                        Fill="{DynamicResource AccentBrush}">
                                                 <Rectangle.Width>
                                                     <Binding Path="PeakLevel" Converter="{x:Static ui:PeakToWidthConverter.Instance}"
-                                                             ConverterParameter="52"/>
+                                                             ConverterParameter="60"/>
                                                 </Rectangle.Width>
                                             </Rectangle>
                                         </Grid>
@@ -245,42 +212,9 @@
                                                    VerticalAlignment="Center"/>
                                     </Grid>
                                 </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-
-                        <Grid Grid.Row="2" Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="16"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0"
-                                    Content="{DynamicResource StrRefresh}"
-                                    Style="{DynamicResource GhostButton}"
-                                    Command="{Binding RefreshMicDevicesCommand}"
-                                    Padding="12,6"/>
-                            <Button Grid.Column="2"
-                                    Content="{DynamicResource StrUseThisSource}"
-                                    Command="{Binding ConfirmMicCommand}"
-                                    Style="{DynamicResource PrimaryButton}"
-                                    HorizontalAlignment="Right"
-                                    Padding="16,6"/>
-                        </Grid>
-
-                        <Border Grid.Row="3" Margin="0,10,0,0"
-                                Background="{DynamicResource BgCardBrush}"
-                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                CornerRadius="6" Padding="14,9">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{DynamicResource StrCurrentSource}" FontSize="12"
-                                           Foreground="{DynamicResource TextSecBrush}"
-                                           VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding ActiveMicName}" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
                 </Border>
 
                 <!-- ── 音量控制 ── -->
@@ -306,8 +240,8 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{DynamicResource StrAppAudio}"
                                        VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextSecBrush}"/>
-                            <Slider Grid.Column="1" Value="{Binding AppGain, Mode=TwoWay}" IsMoveToPointEnabled="True"
-                                    Minimum="0" Maximum="2" TickFrequency="0.05" VerticalAlignment="Center"/>
+                            <ui:SmoothSlider Grid.Column="1" Value="{Binding AppGain, Mode=TwoWay}"
+                                    Minimum="0" Maximum="2" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="2" Text="{Binding AppGain, StringFormat={}{0:P0}}"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
@@ -321,8 +255,8 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{DynamicResource StrMicrophone}"
                                        VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextSecBrush}"/>
-                            <Slider Grid.Column="1" Value="{Binding MicGain, Mode=TwoWay}" IsMoveToPointEnabled="True"
-                                    Minimum="0" Maximum="2" TickFrequency="0.05" VerticalAlignment="Center"/>
+                            <ui:SmoothSlider Grid.Column="1" Value="{Binding MicGain, Mode=TwoWay}"
+                                    Minimum="0" Maximum="2" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="2" Text="{Binding MicGain, StringFormat={}{0:P0}}"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
@@ -396,7 +330,7 @@
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsRunning}" Value="True">
                                         <DataTrigger.EnterActions>
-                                            <BeginStoryboard>
+                                            <BeginStoryboard x:Name="BlinkStoryboard">
                                                 <Storyboard RepeatBehavior="Forever">
                                                     <DoubleAnimation Storyboard.TargetProperty="Opacity"
                                                         From="1.0" To="0.3" Duration="0:0:0.8"
@@ -405,6 +339,7 @@
                                             </BeginStoryboard>
                                         </DataTrigger.EnterActions>
                                         <DataTrigger.ExitActions>
+                                            <StopStoryboard BeginStoryboardName="BlinkStoryboard"/>
                                             <BeginStoryboard>
                                                 <Storyboard>
                                                     <DoubleAnimation Storyboard.TargetProperty="Opacity"
@@ -423,10 +358,14 @@
                 </StackPanel>
 
                 <TextBlock Grid.Column="2"
-                           Text="NAUDIO / WASAPI / VBCABLE"
                            Foreground="{DynamicResource TextSecBrush}"
-                           FontSize="10" Opacity="0.6" VerticalAlignment="Center"
-                           FontFamily="Consolas"/>
+                           FontSize="11" Opacity="0.8" VerticalAlignment="Center"
+                           FontFamily="Segoe UI">
+                    <Hyperlink NavigateUri="https://github.com/Yamada-Ryo4/VoicePipe"
+                               RequestNavigate="Hyperlink_RequestNavigate"
+                               Foreground="{DynamicResource AccentBrush}"
+                               TextDecorations="None">项目仓库 (GitHub)</Hyperlink>
+                </TextBlock>
             </Grid>
         </Border>
     </Grid>
