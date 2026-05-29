@@ -5,10 +5,11 @@ namespace VoicePipe.Audio;
 /// <summary>
 /// 双路 PCM 混音引擎（Pull 模型）。
 /// 实现 IWaveProvider，由 WaveOutEvent 按需拉取数据，保证输出速率与设备时钟严格同步。
-/// 彻底消除 Push 模型的时钟漂移 / 缓冲区溢出 / 数据丢弃问题。
 ///
-/// AppGain / MicGain 是各自信源的直接幅度增益（独立控制，互不影响）。
-/// 重采样使用 Catmull-Rom 三次插值，保证音乐质量。
+/// 性能优化：
+/// - 预分配固定缓冲区，Read() 内零堆分配
+/// - 波形分析内联到 Read()，消除额外的 lock + 数组拷贝
+/// - 重采样使用缓存的缓冲区
 /// </summary>
 public class AudioMixEngine : IWaveProvider
 {
@@ -20,16 +21,43 @@ public class AudioMixEngine : IWaveProvider
     // volatile 确保播放线程始终读到 UI 线程写入的最新值，防止 JIT 缓存旧值。
     private volatile float _appGain = 0.75f;
     private volatile float _micGain = 0.75f;
-    public float AppGain { get => _appGain; set => _appGain = value; }
-    public float MicGain { get => _micGain; set => _micGain = value; }
+    private volatile float _appGainSquared = 0.5625f; // 0.75^2
+    private volatile float _micGainSquared = 0.5625f; // 0.75^2
 
-    // 软限幅阈值（-3 dBFS = 0.708）
-    private const float LimiterThreshold = 0.708f;
+    public float AppGain 
+    { 
+        get => _appGain; 
+        set 
+        { 
+            _appGain = value; 
+            _appGainSquared = value * value; 
+        } 
+    }
+    public float MicGain 
+    { 
+        get => _micGain; 
+        set 
+        { 
+            _micGain = value; 
+            _micGainSquared = value * value; 
+        } 
+    }
+
+    // 软限幅阈值放宽到 -0.5 dBFS (0.944)，只做极限防爆音，不压制正常动态
+    private const float LimiterThreshold = 0.944f;
 
     // IWaveProvider 输出格式：44100Hz / 2ch / Float32
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
 
-    private int _readCount = 0;
+    // ★ 预分配缓冲区，避免 Read() 每次调用时堆分配
+    private const int MaxSamplesPerRead = 4096;
+    private readonly float[] _appTemp = new float[MaxSamplesPerRead];
+    private readonly float[] _micTemp = new float[MaxSamplesPerRead];
+
+    // ★ 重采样缓存缓冲区（FeedMic 在 WASAPI 回调线程单线程调用，无需加锁）
+    private float[]? _resampleStereoCache;
+    private float[]? _resampleRateCache;
+    private float[]? _monoStereoCache;
 
     // --- 输入端：由 WASAPI 回调线程调用，只往 RingBuffer 里写数据 ---
 
@@ -37,8 +65,9 @@ public class AudioMixEngine : IWaveProvider
 
     public void FeedMic(float[] samples, WaveFormat srcFormat)
     {
-        var resampled = Resample(samples, srcFormat);
-        _micBuffer.Write(resampled);
+        // ★ Resample 返回缓存数组 + 有效长度，Write 用显式长度避免 ToArray()
+        var (buf, len) = Resample(samples, srcFormat);
+        _micBuffer.Write(buf, 0, len);
     }
 
     // --- 输出端：由 WaveOutEvent 的播放线程调用，按需拉取混音数据 ---
@@ -52,30 +81,25 @@ public class AudioMixEngine : IWaveProvider
     {
         int samplesNeeded = count / 4; // float32 = 4 bytes per sample
 
-        // App：读可用数据，不足补零
-        float[] app = new float[samplesNeeded];
-        int appAvail = _appBuffer.Available;
-        if (appAvail > 0)
-        {
-            int toRead = Math.Min(appAvail, samplesNeeded);
-            var appData = _appBuffer.Read(toRead);
-            Array.Copy(appData, app, appData.Length);
-        }
+        // ★ 使用预分配缓冲区，先清零；异常大的请求用临时分配
+        var appBuf = samplesNeeded <= MaxSamplesPerRead ? _appTemp : new float[samplesNeeded];
+        var micBuf = samplesNeeded <= MaxSamplesPerRead ? _micTemp : new float[samplesNeeded];
+        Array.Clear(appBuf, 0, samplesNeeded);
+        Array.Clear(micBuf, 0, samplesNeeded);
 
-        // Mic：读可用数据，不足补零
-        float[] mic = new float[samplesNeeded];
-        int micAvail = _micBuffer.Available;
-        if (micAvail > 0)
-        {
-            int toRead = Math.Min(micAvail, samplesNeeded);
-            var micData = _micBuffer.Read(toRead);
-            Array.Copy(micData, mic, micData.Length);
-        }
+        // App：读可用数据到预分配缓冲区
+        _appBuffer.Read(appBuf, 0, samplesNeeded);
 
-        // 混音 + 软限幅 → 写入输出 buffer
+        // Mic：读可用数据到预分配缓冲区
+        _micBuffer.Read(micBuf, 0, samplesNeeded);
+
+        // 混音 + 软限幅 + 内联波形分析 → 写入输出 buffer
+        float appGainSq = _appGainSquared;
+        float micGainSq = _micGainSquared;
+
         for (int i = 0; i < samplesNeeded; i++)
         {
-            float mixed = SoftLimit(app[i] * AppGain + mic[i] * MicGain);
+            float mixed = SoftLimit(appBuf[i] * appGainSq + micBuf[i] * micGainSq);
             int pos = offset + i * 4;
             // 直接写 float 的 4 字节到 byte[]
             unsafe
@@ -83,17 +107,10 @@ public class AudioMixEngine : IWaveProvider
                 fixed (byte* ptr = &buffer[pos])
                     *(float*)ptr = mixed;
             }
+
+            // ★ 内联波形分析 — 不再调用 WaveformAnalyzer.Push()，消除锁 + 数组分配
+            WaveformAnalyzer.InlineSample(mixed);
         }
-
-        // 波形分析（用于 UI 显示）
-        var mixedFloats = new float[samplesNeeded];
-        Buffer.BlockCopy(buffer, offset, mixedFloats, 0, count);
-        WaveformAnalyzer.Push(mixedFloats);
-
-        _readCount++;
-        if (_readCount % 500 == 0)
-            Serilog.Log.Debug("AudioMixEngine: Read#{N} samples={S} appAvail={App} micAvail={Mic}",
-                _readCount, samplesNeeded, appAvail, micAvail);
 
         return count; // 永远返回请求的字节数，保证输出流连续
     }
@@ -109,61 +126,73 @@ public class AudioMixEngine : IWaveProvider
         return sign * (LimiterThreshold + MathF.Tanh(excess) * (1f - LimiterThreshold));
     }
 
-    private static float[] Resample(float[] input, WaveFormat srcFmt)
+    /// <summary>
+    /// 重采样并返回 (缓存数组, 有效样本数)，调用方用显式长度写 RingBuffer，避免 ToArray()。
+    /// </summary>
+    private (float[] buf, int len) Resample(float[] input, WaveFormat srcFmt)
     {
         int channels = srcFmt.Channels;
+        float[] workBuf = input;
+        int workLen = input.Length;
 
         // 多声道 → 立体声下混
         if (channels > 2)
         {
             int frames = input.Length / channels;
-            var stereo = new float[frames * 2];
+            int stereoLen = frames * 2;
+            if (_resampleStereoCache == null || _resampleStereoCache.Length < stereoLen)
+                _resampleStereoCache = new float[stereoLen];
+
             for (int f = 0; f < frames; f++)
             {
                 float sum = 0;
                 for (int c = 0; c < channels; c++)
                     sum += input[f * channels + c];
                 float avg = sum / channels;
-                stereo[f * 2]     = avg;
-                stereo[f * 2 + 1] = avg;
+                _resampleStereoCache[f * 2]     = avg;
+                _resampleStereoCache[f * 2 + 1] = avg;
             }
-            input = stereo;
+            workBuf = _resampleStereoCache; // ★ 直接用缓存，不再 ToArray()
+            workLen = stereoLen;
             channels = 2;
         }
         // 单声道 → 立体声
         else if (channels == 1)
         {
-            input = MonoToStereo(input);
+            int stereoLen = input.Length * 2;
+            // ★ 缓存单声道→立体声缓冲区
+            if (_monoStereoCache == null || _monoStereoCache.Length < stereoLen)
+                _monoStereoCache = new float[stereoLen];
+            for (int i = 0; i < input.Length; i++)
+            {
+                _monoStereoCache[i * 2]     = input[i];
+                _monoStereoCache[i * 2 + 1] = input[i];
+            }
+            workBuf = _monoStereoCache;
+            workLen = stereoLen;
             channels = 2;
         }
 
         // 采样率转换（如 48000Hz → 44100Hz）
         if (srcFmt.SampleRate != 44100)
-            input = ResampleRate(input, srcFmt.SampleRate, 44100, channels);
+            return ResampleRate(workBuf, workLen, srcFmt.SampleRate, 44100, channels);
 
-        return input;
-    }
-
-    private static float[] MonoToStereo(float[] mono)
-    {
-        var stereo = new float[mono.Length * 2];
-        for (int i = 0; i < mono.Length; i++)
-        {
-            stereo[i * 2]     = mono[i];
-            stereo[i * 2 + 1] = mono[i];
-        }
-        return stereo;
+        return (workBuf, workLen);
     }
 
     /// <summary>
-    /// 三次 Hermite 插值重采样。
+    /// 三次 Hermite 插值重采样，返回 (缓存数组, 有效样本数)，零分配。
     /// </summary>
-    private static float[] ResampleRate(float[] input, int srcRate, int dstRate, int channels)
+    private (float[] buf, int len) ResampleRate(float[] input, int inputLen, int srcRate, int dstRate, int channels)
     {
         double ratio = (double)srcRate / dstRate;
-        int srcFrames = input.Length / channels;
+        int srcFrames = inputLen / channels;
         int dstFrames = (int)Math.Ceiling(srcFrames / ratio);
-        var output = new float[dstFrames * channels];
+        int outputLen = dstFrames * channels;
+
+        // ★ 缓存输出缓冲区，直接返回，不再拷贝
+        if (_resampleRateCache == null || _resampleRateCache.Length < outputLen)
+            _resampleRateCache = new float[outputLen];
 
         for (int f = 0; f < dstFrames; f++)
         {
@@ -177,10 +206,11 @@ public class AudioMixEngine : IWaveProvider
                 float s1 = GetSample(input, i1,     c, channels, srcFrames);
                 float s2 = GetSample(input, i1 + 1, c, channels, srcFrames);
                 float s3 = GetSample(input, i1 + 2, c, channels, srcFrames);
-                output[f * channels + c] = CatmullRom(s0, s1, s2, s3, t);
+                _resampleRateCache[f * channels + c] = CatmullRom(s0, s1, s2, s3, t);
             }
         }
-        return output;
+
+        return (_resampleRateCache, outputLen); // ★ 直接返回缓存，零分配
     }
 
     private static float GetSample(float[] buf, int frame, int ch, int channels, int totalFrames)
@@ -205,6 +235,5 @@ public class AudioMixEngine : IWaveProvider
     {
         _appBuffer.Clear();
         _micBuffer.Clear();
-        _readCount = 0;
     }
 }

@@ -103,6 +103,15 @@ public class PipelineManager : IDisposable
     }
 
     /// <summary>
+    /// 仅停止 App 音频混入，保留麦克风直通到虚拟麦克风。
+    /// Writer 和 MicCapturer 继续运行，只是不再混入应用声音。
+    /// </summary>
+    public void StopAppOnly()
+    {
+        _currentPid = 0;
+    }
+
+    /// <summary>
     /// 扫描缓存，清理已退出进程的 LoopbackCapturer 会话。
     /// 防止用户切换多个音频源后，旧进程退出但 capturer 仍在后台空转导致内存泄漏。
     /// </summary>

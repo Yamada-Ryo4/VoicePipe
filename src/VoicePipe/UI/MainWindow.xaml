@@ -1,4 +1,4 @@
-<Window x:Class="VoicePipe.UI.MainWindow"
+﻿<Window x:Class="VoicePipe.UI.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:VoicePipe.ViewModels"
@@ -45,7 +45,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.1" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.1.1" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -304,6 +304,12 @@
                             Width="160" Height="44"
                             Visibility="{Binding IsRunning, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"/>
                 </Grid>
+
+                <CheckBox HorizontalAlignment="Center" Margin="0,12,0,0"
+                          IsChecked="{Binding MicPassthrough, Mode=TwoWay}"
+                          Foreground="{DynamicResource TextSecBrush}" FontSize="12">
+                    <TextBlock Text="{DynamicResource StrMicPassthrough}"/>
+                </CheckBox>
             </StackPanel>
         </ScrollViewer>
 

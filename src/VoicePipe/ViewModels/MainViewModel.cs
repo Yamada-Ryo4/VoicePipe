@@ -48,6 +48,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private string _statusText = "Ready";
     [ObservableProperty] private bool _isCableAvailable;
+    [ObservableProperty] private bool _micPassthrough;
+    private bool _isMicPassthroughActive; // 当前是否处于麦克风直通状态
 
     [ObservableProperty] private float[] _waveformData = Array.Empty<float>();
 
@@ -185,9 +187,32 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task StopPipeline()
     {
-        await _pipeline.StopAsync();
-        IsRunning = false;
-        StatusText = "Stopped";
+        if (MicPassthrough)
+        {
+            // 仅停止 App 音频，保留麦克风直通
+            _pipeline.StopAppOnly();
+            _isMicPassthroughActive = true;
+            IsRunning = false;
+            StatusText = "🎤 麦克风直通中";
+        }
+        else
+        {
+            await _pipeline.StopAsync();
+            _isMicPassthroughActive = false;
+            IsRunning = false;
+            StatusText = "Stopped";
+        }
+    }
+
+    partial void OnMicPassthroughChanged(bool value)
+    {
+        // 取消勾选时，如果正在直通，则完全停止
+        if (!value && _isMicPassthroughActive)
+        {
+            _ = _pipeline.StopAsync();
+            _isMicPassthroughActive = false;
+            StatusText = "Stopped";
+        }
     }
 
     partial void OnAppGainChanged(float value)

@@ -5,8 +5,12 @@ using System.Threading.Tasks;
 namespace VoicePipe.Audio;
 
 /// <summary>
-/// 后台线程以 30fps 轮询系统音频峰值，完全不阻塞 UI。
+/// 后台线程轮询系统音频峰值，完全不阻塞 UI。
 /// 对麦克风设备会打开静默监听会话，使 AudioMeterInformation 返回真实峰值。
+/// 
+/// 性能优化：
+/// - COM 对象（MMDeviceEnumerator / MMDevice）被缓存复用，不再每帧创建销毁
+/// - 轮询频率 15fps（67ms），人眼对音量条感知约 10-15fps 足够
 /// </summary>
 public static class PeakMonitor
 {
@@ -16,6 +20,11 @@ public static class PeakMonitor
 
     // 保持对每个麦克风的静默捕获，让 AudioMeterInformation 能返回真实值
     private static readonly ConcurrentDictionary<string, WasapiCapture> _micListeners = new();
+
+    // ★ 缓存的 COM 对象，避免每帧创建/销毁
+    private static MMDeviceEnumerator? _cachedEnumerator;
+    private static MMDevice? _cachedRenderDevice;
+    private static readonly Dictionary<string, MMDevice> _cachedMicDevices = new();
 
     public static void Start()
     {
@@ -33,6 +42,9 @@ public static class PeakMonitor
             try { kvp.Value.StopRecording(); kvp.Value.Dispose(); } catch { }
         }
         _micListeners.Clear();
+
+        // 清理缓存的 COM 对象
+        DisposeCachedDevices();
     }
 
     private static async Task MonitorLoop()
@@ -41,13 +53,15 @@ public static class PeakMonitor
         {
             try
             {
-                using var enumerator = new MMDeviceEnumerator();
+                // ★ 复用缓存的枚举器
+                _cachedEnumerator ??= new MMDeviceEnumerator();
 
                 // ── App process peaks ──
                 try
                 {
-                    using var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-                    var sessions = device.AudioSessionManager.Sessions;
+                    // ★ 复用缓存的渲染设备
+                    _cachedRenderDevice ??= _cachedEnumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                    var sessions = _cachedRenderDevice.AudioSessionManager.Sessions;
                     for (int i = 0; i < sessions.Count; i++)
                     {
                         using var session = sessions[i];
@@ -56,38 +70,66 @@ public static class PeakMonitor
                             ProcessPeaks[pid] = session.AudioMeterInformation.MasterPeakValue;
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Serilog.Log.Warning(ex, "PeakMonitor: render session enum failed");
+                    // 设备可能被拔出/切换，清空缓存下次重建
+                    try { _cachedRenderDevice?.Dispose(); } catch { }
+                    _cachedRenderDevice = null;
                 }
 
                 // ── Mic input peaks ──
                 try
                 {
-                    var micCol = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+                    var micCol = _cachedEnumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+                    // 清理已拔出的设备缓存
+                    var activeIds = new HashSet<string>();
                     for (int i = 0; i < micCol.Count; i++)
                     {
-                        var mic = micCol[i];
-                        var micId = mic.ID;
+                        var micId = micCol[i].ID;
+                        activeIds.Add(micId);
 
-                        // 确保对该麦克风有一个静默监听会话
-                        // 否则 AudioMeterInformation.MasterPeakValue 在没有应用录音时始终返回 0
+                        // ★ 复用缓存的麦克风设备对象
+                        if (!_cachedMicDevices.TryGetValue(micId, out var cachedMic))
+                        {
+                            cachedMic = micCol[i];
+                            _cachedMicDevices[micId] = cachedMic;
+                        }
+                        else
+                        {
+                            micCol[i].Dispose(); // 本次枚举出的新对象不需要，释放
+                        }
+
                         EnsureMicListener(micId);
+                        MicPeaks[micId] = cachedMic.AudioMeterInformation.MasterPeakValue;
+                    }
 
-                        MicPeaks[micId] = mic.AudioMeterInformation.MasterPeakValue;
+                    // 清理已断开的设备
+                    var toRemove = new List<string>();
+                    foreach (var kv in _cachedMicDevices)
+                    {
+                        if (!activeIds.Contains(kv.Key))
+                            toRemove.Add(kv.Key);
+                    }
+                    foreach (var id in toRemove)
+                    {
+                        try { _cachedMicDevices[id].Dispose(); } catch { }
+                        _cachedMicDevices.Remove(id);
+                        MicPeaks.TryRemove(id, out _);
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Serilog.Log.Warning(ex, "PeakMonitor: capture enum failed");
+                    // 枚举失败，清空缓存下次重建
+                    DisposeCachedMics();
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Serilog.Log.Warning(ex, "PeakMonitor: outer loop error");
+                // 最外层异常（枚举器本身坏了），重建一切
+                DisposeCachedDevices();
             }
 
-            await Task.Delay(33);
+            await Task.Delay(67); // ★ 15fps，够了
         }
     }
 
@@ -122,11 +164,28 @@ public static class PeakMonitor
             capture.StartRecording();
 
             _micListeners[deviceId] = capture;
-            Serilog.Log.Debug("PeakMonitor: 已为 {Id} 启动静默监听", deviceId);
         }
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "PeakMonitor: 启动麦克风监听失败 {Id}", deviceId);
         }
+    }
+
+    private static void DisposeCachedDevices()
+    {
+        try { _cachedRenderDevice?.Dispose(); } catch { }
+        _cachedRenderDevice = null;
+        DisposeCachedMics();
+        try { _cachedEnumerator?.Dispose(); } catch { }
+        _cachedEnumerator = null;
+    }
+
+    private static void DisposeCachedMics()
+    {
+        foreach (var kv in _cachedMicDevices)
+        {
+            try { kv.Value.Dispose(); } catch { }
+        }
+        _cachedMicDevices.Clear();
     }
 }
