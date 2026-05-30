@@ -27,6 +27,16 @@ public class AppSettings
     public bool   MonitorApp         { get; set; } = false; // 子开关：单独监听 App
     public bool   MonitorMic         { get; set; } = false; // 子开关：单独监听麦克风（两子开关都关+主开关开=监听整个输出）
     public string MonitorDeviceId    { get; set; } = "";    // 监听输出目标设备 ID（空=系统默认播放设备）
+    public float  MonitorGain        { get; set; } = 1.0f;  // 监听音量 0~2（独立于 VB-Cable 输出音量）
+
+    // 开机自启时静默最小化到托盘（不弹主窗口）
+    public bool   StartMinimized     { get; set; } = false;
+
+    // 可视化模式：true=频谱图，false=波形图（默认波形）
+    public bool   ShowSpectrum       { get; set; } = false;
+
+    // 首次使用引导：首次启动显示一次上手说明，看过后置 true 不再显示
+    public bool   FirstRunDone       { get; set; } = false;
 
     public HotkeyBinding MuteHotkey     { get; set; } = HotkeyBinding.None; // Req 2.3
     public HotkeyBinding PipelineHotkey { get; set; } = HotkeyBinding.None; // Req 2.3

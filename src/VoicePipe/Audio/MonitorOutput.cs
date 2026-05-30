@@ -25,6 +25,7 @@ public sealed class MonitorOutput : IDisposable
     private WasapiOut? _out;
     private MMDevice? _device;
     private bool _disposed;
+    private readonly object _sync = new(); // ★ 串行化 Start/Stop/设备切换，防止多线程重叠创建/销毁 WasapiOut
 
     // 监听目标设备 ID。空字符串 = 跟随系统默认播放设备。volatile：UI 线程改、Start 读。
     private volatile string _targetDeviceId = "";
@@ -36,10 +37,13 @@ public sealed class MonitorOutput : IDisposable
         set
         {
             var v = value ?? "";
-            if (_targetDeviceId == v) return;
-            _targetDeviceId = v;
-            // 运行中切设备：重启输出链到新设备
-            if (_out != null) Start();
+            lock (_sync)
+            {
+                if (_targetDeviceId == v) return;
+                _targetDeviceId = v;
+                // 运行中切设备：重启输出链到新设备（在锁内调 StartLocked 避免与其它 Start/Stop 重叠）
+                if (_out != null) StartLocked();
+            }
         }
     }
 
@@ -55,7 +59,13 @@ public sealed class MonitorOutput : IDisposable
     /// </summary>
     public void Start()
     {
-        Stop();
+        lock (_sync) StartLocked();
+    }
+
+    // 必须在持有 _sync 锁的前提下调用。
+    private void StartLocked()
+    {
+        StopLocked();
         if (_disposed) return;
         try
         {
@@ -87,7 +97,7 @@ public sealed class MonitorOutput : IDisposable
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "MonitorOutput: 启动失败（监听不可用，不影响 VB-Cable 输出）");
-            Stop();
+            StopLocked();
         }
     }
 
@@ -114,6 +124,12 @@ public sealed class MonitorOutput : IDisposable
 
     public void Stop()
     {
+        lock (_sync) StopLocked();
+    }
+
+    // 必须在持有 _sync 锁的前提下调用。
+    private void StopLocked()
+    {
         try
         {
             _out?.Stop();
@@ -128,9 +144,12 @@ public sealed class MonitorOutput : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        Stop();
+        lock (_sync)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            StopLocked();
+        }
     }
 
     /// <summary>

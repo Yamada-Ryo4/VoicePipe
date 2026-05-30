@@ -204,7 +204,9 @@ public class MicCapturer : IDisposable
                 // ★ 过滤虚拟回环录音端，防止反馈环路（嗡嗡/嘟嘟声）
                 if (IsLoopbackCaptureDevice(dev.FriendlyName))
                 {
-                    Serilog.Log.Information("MicCapturer: 已排除虚拟回环设备 {Name}（防反馈环路）", dev.FriendlyName);
+                    // ★ 每个设备只记一次日志（GetAvailableMics 每 2 秒调一次，否则刷屏）
+                    if (_loggedExcludedDevices.Add(dev.ID))
+                        Serilog.Log.Information("MicCapturer: 已排除虚拟回环设备 {Name}（防反馈环路）", dev.FriendlyName);
                     continue;
                 }
                 result.Add(new MicInfo(dev.ID, dev.FriendlyName));
@@ -216,6 +218,9 @@ public class MicCapturer : IDisposable
         }
         return result;
     }
+
+    // 已记录过"已排除"日志的回环设备 ID 集合，避免每 2 秒枚举重复刷屏
+    private static readonly HashSet<string> _loggedExcludedDevices = new();
 
     public void Dispose()
     {

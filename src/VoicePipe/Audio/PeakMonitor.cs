@@ -58,6 +58,11 @@ public static class PeakMonitor
     private static MMDevice? _cachedRenderDevice;
     private static readonly Dictionary<string, MMDevice> _cachedMicDevices = new();
 
+    // 默认渲染设备变更检测节流：用 Environment.TickCount64 记录上次检查时间，
+    // 约每 1s 比对一次默认设备 ID，避免每帧重取设备对象（保留性能优化意图）。
+    private static long _lastDeviceCheckTick;
+    private const int DeviceCheckIntervalMs = 1000;
+
     public static void Start()
     {
         if (_isRunning) return;
@@ -91,7 +96,31 @@ public static class PeakMonitor
                 // ── App process peaks（一次性枚举，成本低，始终全监听）──
                 try
                 {
+                    // (a) 冷启动/异常重建：首次获取默认渲染设备
                     _cachedRenderDevice ??= _cachedEnumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+
+                    // (b) 节流感知默认设备变更（约每 1s 一次）：复用缓存的枚举器重取默认端点，
+                    //     比对设备 ID——相同则丢弃临时对象；不同则 Dispose 旧设备并切换到新设备。
+                    //     (a) 之后 _cachedRenderDevice 必非 null，故此处直接做节流检查。
+                    var nowTick = Environment.TickCount64;
+                    if (nowTick - _lastDeviceCheckTick >= DeviceCheckIntervalMs)
+                    {
+                        _lastDeviceCheckTick = nowTick;
+                        var fresh = _cachedEnumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                        if (fresh.ID != _cachedRenderDevice.ID)
+                        {
+                            try { _cachedRenderDevice.Dispose(); } catch { }
+                            _cachedRenderDevice = fresh; // 切换到新默认设备
+                        }
+                        else
+                        {
+                            try { fresh.Dispose(); } catch { } // 未变更，丢弃临时对象
+                        }
+                    }
+
+                    // (c) ★ 关键修复：每轮刷新会话枚举，使首轮后新建的会话可见。
+                    //     NAudio 的 Sessions 只在 RefreshSessions() 时重取快照，缓存设备不刷新就读不到新会话。
+                    _cachedRenderDevice.AudioSessionManager.RefreshSessions();
                     var sessions = _cachedRenderDevice.AudioSessionManager.Sessions;
                     // 本轮已写过的 PID：用于在同一轮内对同进程的多个会话取最大值，
                     // 而不会被后写的静默会话覆盖成 0（Edge/Apple Music 等多进程/多流 app 关键）。

@@ -71,6 +71,22 @@ public class AudioMixEngine : IWaveProvider, IDisposable
         set => _monitorMic = value;
     }
 
+    // 监听音量（独立于发往 VB-Cable 的音量）：只作用于监听信号，0~2，感知响度曲线。
+    // 让用户耳机里听得大/小一点，而不影响实际发出去的音量。
+    private float _monitorGain = 1.0f;
+    private volatile float _monitorGainAmp = 1.0f;
+
+    /// <summary>监听音量（0~2，独立于 VB-Cable 输出音量）。仅影响耳机监听响度。</summary>
+    public float MonitorGain
+    {
+        get => _monitorGain;
+        set
+        {
+            _monitorGain = value;
+            _monitorGainAmp = MathF.Pow(value, GainExponent);
+        }
+    }
+
     /// <summary>供监听输出端（MonitorProvider）拉取监听 PCM 的缓冲。</summary>
     internal RingBuffer MonitorBuffer => _monitorBuffer;
 
@@ -206,6 +222,7 @@ public class AudioMixEngine : IWaveProvider, IDisposable
         else { monApp = _monitorApp; monMic = _monitorMic; }
         var monBuf = _monitorTemp;
         bool writeMonitor = monitorOn && samplesNeeded <= MaxSamplesPerRead;
+        float monGain = _monitorGainAmp; // 监听独立音量
 
         // ★ fixed 提到循环外，只 pin 一次（之前每个样本 pin 一次，代价很高）
         unsafe
@@ -224,10 +241,11 @@ public class AudioMixEngine : IWaveProvider, IDisposable
 
                     // ★ 内联波形分析 — 不再调用 WaveformAnalyzer.Push()，消除锁 + 数组分配
                     WaveformAnalyzer.InlineSample(mixed);
+                    SpectrumAnalyzer.InlineSample(mixed); // ★ 频谱：写入环形缓冲（零分配 O(1)）
 
-                    // 本地监听信号：按子开关选择 App/Mic 分量（独立于 VB-Cable 输出）
+                    // 本地监听信号：按子开关选择 App/Mic 分量（独立于 VB-Cable 输出），再乘监听独立音量
                     if (writeMonitor)
-                        monBuf[i] = SoftLimit((monApp ? appComp : 0f) + (monMic ? micComp : 0f));
+                        monBuf[i] = SoftLimit(((monApp ? appComp : 0f) + (monMic ? micComp : 0f)) * monGain);
                 }
             }
         }

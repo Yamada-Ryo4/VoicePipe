@@ -61,4 +61,15 @@ public static class WaveformAnalyzer
         GetSnapshot(snap);
         return snap;
     }
+
+    /// <summary>
+    /// 读取最近写入槽位的峰值（0~1），供 UI 显示实时电平 / dB。
+    /// 无锁读取最新槽位，最多差一帧，对显示无影响。
+    /// </summary>
+    public static float GetLatestPeak()
+    {
+        int idx = Volatile.Read(ref _index);
+        // _index 指向下一个要写的槽位，最近写入的是 idx-1
+        return _buffer[(idx - 1) & Mask];
+    }
 }

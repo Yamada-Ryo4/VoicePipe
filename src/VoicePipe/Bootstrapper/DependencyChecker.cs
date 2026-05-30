@@ -26,30 +26,23 @@ public static class DependencyChecker
 
     public static bool IsVbCableInstalled()
     {
-        // 方法1：检查注册表 VB-Audio 键（里面有 VBAudioCableWDM_SR 等值）
-        using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\VB-Audio\Cable"))
-        {
-            if (key?.GetValue("VBAudioCableWDM_SR") != null) return true;
-        }
-
-        // 方法2：检查驱动服务 VBAudioVACMME 是否已注册
-        using (var svcKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\VBAudioVACMME"))
-        {
-            if (svcKey != null) return true;
-        }
-
-        // 方法3：检查 WaveOut 设备中是否存在 CABLE Input
+        // ★ 以"真实激活的 CABLE Input 渲染端点是否存在"为准，与真正负责输出的
+        //   VirtualMicWriter.FindCableInputDevice() 完全对齐（枚举 DataFlow.Render + DeviceState.Active，
+        //   FriendlyName 含 "CABLE Input"）。
+        //
+        //   不再以注册表键（SOFTWARE\VB-Audio\Cable、Services\VBAudioVACMME 等）作为判据：
+        //   VB-Cable 卸载后这些键经常残留，会导致"检测说已安装/可用，但 VirtualMicWriter
+        //   实际找不到 CABLE Input 端点 → 没声音"的标准不一致。改为单一真实端点口径后，
+        //   "检测说可用" ⇔ "真能找到 CABLE Input 输出"。
+        //
+        //   枚举/COM 异常时按"未安装"处理（提示用户安装），由 IsCableInputAvailable 内部 try/catch 兜底。
         try
         {
-            for (int i = 0; i < NAudio.Wave.WaveOut.DeviceCount; i++)
-            {
-                if (NAudio.Wave.WaveOut.GetCapabilities(i).ProductName
-                        .Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
+            return VoicePipe.Audio.VirtualMicWriter.IsCableInputAvailable();
         }
-        catch { /* 枚举设备出错时忽略 */ }
-
-        return false;
+        catch
+        {
+            return false;
+        }
     }
 }

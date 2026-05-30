@@ -76,6 +76,17 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private float[] _waveformData = Array.Empty<float>();
 
+    // 频谱数据（双缓冲，与波形并存；由 ShowSpectrum 决定 UI 显示哪个）
+    [ObservableProperty] private float[] _spectrumData = Array.Empty<float>();
+    [ObservableProperty] private bool _showSpectrum;
+    // 首次使用引导遮罩（首次启动显示一次）
+    [ObservableProperty] private bool _showFirstRunGuide;
+    private readonly float[][] _spectrumBuffers = { new float[VoicePipe.Audio.SpectrumAnalyzer.Bars], new float[VoicePipe.Audio.SpectrumAnalyzer.Bars] };
+    private int _spectrumBufferIndex;
+
+    // 输出峰值（dBFS 文本，如 "-12.3 dB" / "−∞"），在波形定时器里更新
+    [ObservableProperty] private string _outputPeakText = "−∞ dB";
+
     // ── 设置面板（主页面内嵌切换视图，非独立窗口）──
     [ObservableProperty] private bool _showSettings;
 
@@ -92,8 +103,10 @@ public partial class MainViewModel : ObservableObject
     // 监听输出设备列表 + 选中项（首项为"系统默认"，Id=""）
     [ObservableProperty] private ObservableCollection<MonitorDeviceItem> _monitorDevices = new();
     [ObservableProperty] private MonitorDeviceItem? _selectedMonitorDevice;
+    [ObservableProperty] private float _monitorGain;
     [ObservableProperty] private bool _autoStartBoot;
     [ObservableProperty] private bool _autoStartPipelineSetting;
+    [ObservableProperty] private bool _startMinimized;
 
     // 热键绑定 + 冲突标志
     [ObservableProperty] private HotkeyBinding _muteHotkey;
@@ -106,6 +119,18 @@ public partial class MainViewModel : ObservableObject
     private Services.AutoStartService? _autoStartService;
     private bool _settingsLoading;
 
+    // ── 检查更新 ──
+    private readonly Services.UpdateService _updateService = new();
+    [ObservableProperty] private string _updateStatus = "";
+    [ObservableProperty] private bool _isCheckingUpdate;
+    // 下载进度：0~1，仅在下载安装包时有意义；IsDownloading 控制进度条显隐
+    [ObservableProperty] private bool _isDownloading;
+    [ObservableProperty] private double _downloadProgress;
+    [ObservableProperty] private string _downloadPercentText = "";
+
+    /// <summary>当前版本号（显示在设置里）。</summary>
+    public string AppVersion => Services.UpdateService.LocalVersion;
+
     // ★ 波形双缓冲：交替使用两个数组，既给绑定提供引用变化以触发重绘，
     // 又避免每帧 new float[512]（只在首次分配两个，之后复用）。
     private readonly float[][] _waveformBuffers = { new float[512], new float[512] };
@@ -117,6 +142,8 @@ public partial class MainViewModel : ObservableObject
         _settingsLoading = true;        // ★ 加载初值期间禁止存盘，避免启动时无谓写盘
         AppGain = _settings.AppGain;
         MicGain = _settings.MicGain;
+        ShowSpectrum = _settings.ShowSpectrum;
+        ShowFirstRunGuide = !_settings.FirstRunDone; // 首次启动显示引导
         _settingsLoading = false;
 
         // 应用持久化的噪声门设置（默认关闭，关闭时为纯直通不影响音质）
@@ -128,6 +155,8 @@ public partial class MainViewModel : ObservableObject
         _pipeline.MonitorApp = _settings.MonitorApp;
         _pipeline.MonitorMic = _settings.MonitorMic;
         _pipeline.MonitorDeviceId = _settings.MonitorDeviceId;
+        _pipeline.MonitorGain = _settings.MonitorGain;
+        MonitorGain = _settings.MonitorGain;
         _pipeline.MonitorEnabled = _settings.MonitorEnabled;
 
         // 监听应用音频捕获彻底失败（LoopbackCapturer 重试耗尽）
@@ -180,6 +209,19 @@ public partial class MainViewModel : ObservableObject
         WaveformAnalyzer.GetSnapshot(buf);
         WaveformData = buf;
         _waveformBufferIndex ^= 1;
+
+        // 输出峰值 dBFS 文本（供 UI 显示，便于精确调音）
+        float pk = WaveformAnalyzer.GetLatestPeak();
+        OutputPeakText = pk <= 0.0001f ? "−∞ dB" : $"{20f * MathF.Log10(pk):0.0} dB";
+
+        // 频谱：仅在频谱模式下计算（双缓冲，避免每帧分配）
+        if (ShowSpectrum)
+        {
+            var sbuf = _spectrumBuffers[_spectrumBufferIndex];
+            VoicePipe.Audio.SpectrumAnalyzer.GetSpectrum(sbuf);
+            SpectrumData = sbuf;
+            _spectrumBufferIndex ^= 1;
+        }
 
         // ★ B4：降噪器若因处理异常自动降级关闭，把 UI 开关同步回 false，避免显示不一致
         if (NoiseGateEnabled && !_pipeline.NoiseGateEnabled)
@@ -456,9 +498,11 @@ public partial class MainViewModel : ObservableObject
         MonitorEnabled = _settings.MonitorEnabled;
         MonitorApp = _settings.MonitorApp;
         MonitorMic = _settings.MonitorMic;
+        MonitorGain = _settings.MonitorGain;
         try { AutoStartBoot = _autoStartService.IsEnabled(); } catch { AutoStartBoot = _settings.AutoStartBoot; }
         _settings.AutoStartBoot = AutoStartBoot;
         AutoStartPipelineSetting = _settings.AutoStartPipeline;
+        StartMinimized = _settings.StartMinimized;
         MuteHotkey = _settings.MuteHotkey;
         PipelineHotkey = _settings.PipelineHotkey;
         _settingsLoading = false;
@@ -533,6 +577,13 @@ public partial class MainViewModel : ObservableObject
         PersistSettings();
     }
 
+    partial void OnMonitorGainChanged(float value)
+    {
+        _pipeline.MonitorGain = value; // 即时应用（仅监听信号，不影响 VB-Cable）
+        _settings.MonitorGain = value;
+        PersistSettings(); // 滑块高频，不打日志
+    }
+
     partial void OnAutoStartBootChanged(bool value)
     {
         try { _autoStartService?.SetEnabled(value); } catch { }
@@ -545,6 +596,20 @@ public partial class MainViewModel : ObservableObject
     {
         _settings.AutoStartPipeline = value;
         if (!_settingsLoading) Serilog.Log.Information("自动启动管线: {State}", value ? "开" : "关");
+        PersistSettings();
+    }
+
+    partial void OnStartMinimizedChanged(bool value)
+    {
+        _settings.StartMinimized = value;
+        if (!_settingsLoading) Serilog.Log.Information("开机静默到托盘: {State}", value ? "开" : "关");
+        PersistSettings();
+    }
+
+    partial void OnShowSpectrumChanged(bool value)
+    {
+        _settings.ShowSpectrum = value;
+        if (!_settingsLoading) Serilog.Log.Information("可视化模式: {Mode}", value ? "频谱图" : "波形图");
         PersistSettings();
     }
 
@@ -575,6 +640,137 @@ public partial class MainViewModel : ObservableObject
     {
         MuteHotkey = HotkeyBinding.None;
         PipelineHotkey = HotkeyBinding.None;
+    }
+
+    /// <summary>关闭首次使用引导并持久化（不再显示）。</summary>
+    public void DismissFirstRunGuide()
+    {
+        ShowFirstRunGuide = false;
+    }
+
+    // 引导关闭即持久化 FirstRunDone=true（无论从哪条路径关闭，确保只弹一次）
+    partial void OnShowFirstRunGuideChanged(bool value)
+    {
+        if (!value && !_settings.FirstRunDone)
+        {
+            _settings.FirstRunDone = true;
+            _settings.Save();
+            Serilog.Log.Information("首次使用引导：已记录 FirstRunDone=true（不再弹出）");
+        }
+    }
+
+    /// <summary>
+    /// 检查 GitHub 是否有新版本。有则提示用户是否更新，确认后下载安装包并运行（走安装流程覆盖安装）。
+    /// 全程 try/catch，网络/解析失败只在状态栏提示，不崩溃。
+    /// </summary>
+    [RelayCommand]
+    private async Task CheckUpdate()
+    {
+        if (IsCheckingUpdate) return;
+        IsCheckingUpdate = true;
+        UpdateStatus = Application.Current.TryFindResource("StrUpdateChecking") as string ?? "Checking...";
+        try
+        {
+            var result = await _updateService.CheckAsync();
+
+            if (result.Error != null)
+            {
+                UpdateStatus = Application.Current.TryFindResource("StrUpdateFailed") as string ?? "Check failed";
+                return;
+            }
+
+            if (!result.Available)
+            {
+                UpdateStatus = (Application.Current.TryFindResource("StrUpdateLatest") as string ?? "Already latest")
+                               + $" (v{result.LocalVersion})";
+                return;
+            }
+
+            // 有新版本 → 询问用户
+            UpdateStatus = (Application.Current.TryFindResource("StrUpdateAvailable") as string ?? "New version")
+                           + $" v{result.LatestVersion}";
+            string prompt = (Application.Current.TryFindResource("StrUpdatePrompt") as string
+                             ?? "New version {0} found (current {1}). Update now?");
+            string title = Application.Current.TryFindResource("StrUpdateTitle") as string ?? "Update available";
+            var answer = System.Windows.MessageBox.Show(
+                string.Format(prompt, result.LatestVersion, result.LocalVersion),
+                title, System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
+            if (answer != System.Windows.MessageBoxResult.Yes)
+                return;
+
+            // 优先下载安装包并运行；拿不到安装包资源则退回打开 Release 页面
+            if (!string.IsNullOrEmpty(result.DownloadUrl))
+            {
+                UpdateStatus = Application.Current.TryFindResource("StrUpdateDownloading") as string ?? "Downloading...";
+                IsDownloading = true;
+                DownloadProgress = 0;
+                DownloadPercentText = "0%";
+
+                // 进度回调切回 UI 线程更新进度条
+                var progress = new Progress<double>(p =>
+                {
+                    DownloadProgress = p;
+                    DownloadPercentText = $"{p * 100:0}%";
+                });
+
+                string? path;
+                try
+                {
+                    path = await _updateService.DownloadInstallerAsync(result.DownloadUrl, progress);
+                }
+                finally
+                {
+                    IsDownloading = false;
+                }
+
+                if (path != null)
+                {
+                    // 下载完成 → 询问是否现在更新
+                    string donePrompt = Application.Current.TryFindResource("StrUpdateDownloaded") as string
+                                        ?? "Download complete. Install now? VoicePipe will close.";
+                    string title2 = Application.Current.TryFindResource("StrUpdateTitle") as string ?? "Update available";
+                    var go = System.Windows.MessageBox.Show(
+                        donePrompt, title2,
+                        System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
+                    if (go == System.Windows.MessageBoxResult.Yes)
+                    {
+                        // 启动安装包（UAC 提权由安装包自身的 manifest 处理），随后退出本程序以便覆盖安装
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = path,
+                            UseShellExecute = true
+                        });
+                        Serilog.Log.Information("UpdateService: 已启动安装包 {Path}，退出当前程序", path);
+                        Application.Current.Shutdown();
+                        return;
+                    }
+                    // 用户选稍后：提示安装包位置，不退出
+                    UpdateStatus = (Application.Current.TryFindResource("StrUpdateReady") as string ?? "Installer ready")
+                                   + $": {path}";
+                    return;
+                }
+                UpdateStatus = Application.Current.TryFindResource("StrUpdateFailed") as string ?? "Download failed";
+            }
+
+            // 退路：打开 Release 页面让用户手动下
+            if (!string.IsNullOrEmpty(result.HtmlUrl))
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = result.HtmlUrl,
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "CheckUpdate: 异常");
+            UpdateStatus = Application.Current.TryFindResource("StrUpdateFailed") as string ?? "Check failed";
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
     }
 
     partial void OnAppGainChanged(float value)

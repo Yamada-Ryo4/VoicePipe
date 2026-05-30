@@ -84,6 +84,13 @@ public partial class MainWindow : Window
 
         // 对账开机自启：以注册表实际状态为准回写持久化意图
         try { settings.AutoStartBoot = _autoStart.IsEnabled(); } catch { }
+
+        // ★ 开机静默到托盘：若开启且本次随系统启动，初始化后直接隐藏到托盘（需 MinimizeToTray 才有托盘常驻意义）
+        if (settings.StartMinimized && settings.MinimizeToTray)
+        {
+            Serilog.Log.Information("开机静默到托盘：隐藏主窗口");
+            Hide();
+        }
     }
 
     private void OnHotkeyPressed(object? sender, HotkeyManager.Action action)
@@ -92,9 +99,27 @@ public partial class MainWindow : Window
         Serilog.Log.Information("全局热键触发: {Action}", action);
         switch (action)
         {
-            case HotkeyManager.Action.ToggleMute: vm.ToggleMicMute(); break;
-            case HotkeyManager.Action.TogglePipeline: vm.TogglePipeline(); break;
+            case HotkeyManager.Action.ToggleMute:
+                vm.ToggleMicMute();
+                // ★ 托盘气泡提示：游戏全屏看不到界面时，确认静音状态切换
+                ShowTrayTip(vm.IsMicMuted
+                    ? (Application.Current.TryFindResource("StrTipMicMuted") as string ?? "Microphone muted")
+                    : (Application.Current.TryFindResource("StrTipMicUnmuted") as string ?? "Microphone unmuted"));
+                break;
+            case HotkeyManager.Action.TogglePipeline:
+                vm.TogglePipeline();
+                ShowTrayTip(vm.IsRunning
+                    ? (Application.Current.TryFindResource("StrTipPipelineOn") as string ?? "Mixing started")
+                    : (Application.Current.TryFindResource("StrTipPipelineOff") as string ?? "Mixing stopped"));
+                break;
         }
+    }
+
+    /// <summary>用托盘气泡显示一条短提示（热键触发时，游戏全屏也能看到系统通知）。</summary>
+    private void ShowTrayTip(string message)
+    {
+        try { TrayIcon?.ShowBalloonTip("VoicePipe", message, Hardcodet.Wpf.TaskbarNotification.BalloonIcon.None); }
+        catch { /* 气泡失败不影响功能 */ }
     }
 
     /// <summary>
@@ -147,6 +172,13 @@ public partial class MainWindow : Window
         if (DataContext is not ViewModels.MainViewModel vm) return;
         vm.ResetHotkeys();
         Serilog.Log.Information("热键已重置为未设置");
+    }
+
+    // ── 首次使用引导："知道了"关闭并持久化 ──
+    private void GuideGotIt_Click(object sender, RoutedEventArgs e)
+    {
+        (DataContext as ViewModels.MainViewModel)?.DismissFirstRunGuide();
+        Serilog.Log.Information("首次使用引导已关闭");
     }
 
     // ── 设置面板切换（主页面内嵌视图 + 滑动淡入淡出动画）──

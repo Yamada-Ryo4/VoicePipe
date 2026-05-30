@@ -93,6 +93,13 @@ public class PipelineManager : IDisposable
         set => _mixer.MonitorMic = value;
     }
 
+    /// <summary>监听音量（0~2，独立于 VB-Cable 输出音量）。仅影响耳机监听响度。</summary>
+    public float MonitorGain
+    {
+        get => _mixer.MonitorGain;
+        set => _mixer.MonitorGain = value;
+    }
+
     // 监听目标设备 ID（空=系统默认）。在 _monitor 未创建时先记住，创建时套用。
     private string _monitorDeviceId = "";
 

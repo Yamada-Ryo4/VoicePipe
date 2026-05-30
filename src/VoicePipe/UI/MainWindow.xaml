@@ -59,7 +59,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.4" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -281,13 +281,36 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="72"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="{DynamicResource StrWaveformPreview}"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="70"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{DynamicResource StrWaveformPreview}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <!-- 勾选框在固定列里，不随 dB 数字宽度变化而移动 -->
+                            <CheckBox Grid.Column="1" IsChecked="{Binding ShowSpectrum, Mode=TwoWay}"
+                                      VerticalAlignment="Center" Margin="0,0,12,0"
+                                      Foreground="{DynamicResource TextSecBrush}"
+                                      ToolTip="{DynamicResource StrSpectrumMode}"/>
+                            <!-- dB 文本固定宽度 + 右对齐：数字在自己的框内变化，不挤动左边的勾选框 -->
+                            <TextBlock Grid.Column="2" Text="{Binding OutputPeakText}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       FontSize="12" FontFamily="Consolas"/>
+                        </Grid>
                         <ui:WaveformControl Grid.Row="1"
                             WaveformData="{Binding WaveformData}"
                             Background="{DynamicResource BgCardBrush}"
-                            LineBrush="{DynamicResource AccentBrush}"/>
+                            LineBrush="{DynamicResource AccentBrush}"
+                            Visibility="{Binding ShowSpectrum, Converter={x:Static ui:BoolToInvVisibilityConverter.Instance}}"/>
+                        <ui:SpectrumControl Grid.Row="1"
+                            SpectrumData="{Binding SpectrumData}"
+                            Background="{DynamicResource BgCardBrush}"
+                            LineBrush="{DynamicResource AccentBrush}"
+                            Visibility="{Binding ShowSpectrum, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"/>
                     </Grid>
                 </Border>
 
@@ -473,6 +496,22 @@
                                           SelectedItem="{Binding SelectedMonitorDevice, Mode=TwoWay}"
                                           DisplayMemberPath="Name"/>
                             </Grid>
+                            <!-- 监听音量（独立于发出去的音量） -->
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="50"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{DynamicResource StrMonitorVolume}"
+                                           VerticalAlignment="Center" FontSize="12" Margin="0,0,12,0"
+                                           Foreground="{DynamicResource TextSecBrush}"/>
+                                <ui:SmoothSlider Grid.Column="1" Value="{Binding MonitorGain, Mode=TwoWay}"
+                                        Minimum="0" Maximum="2" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="{Binding MonitorGain, StringFormat={}{0:P0}}"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
+                            </Grid>
                             <CheckBox IsChecked="{Binding MonitorApp, Mode=TwoWay}"
                                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8">
                                 <TextBlock Text="{DynamicResource StrMonitorApp}"/>
@@ -501,8 +540,12 @@
                             <TextBlock Text="{DynamicResource StrAutoStartBoot}"/>
                         </CheckBox>
                         <CheckBox IsChecked="{Binding AutoStartPipelineSetting, Mode=TwoWay}"
-                                  Foreground="{DynamicResource TextPrimaryBrush}">
+                                  Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12">
                             <TextBlock Text="{DynamicResource StrAutoStartPipeline}"/>
+                        </CheckBox>
+                        <CheckBox IsChecked="{Binding StartMinimized, Mode=TwoWay}"
+                                  Foreground="{DynamicResource TextPrimaryBrush}">
+                            <TextBlock Text="{DynamicResource StrStartMinimized}"/>
                         </CheckBox>
                     </StackPanel>
                 </Border>
@@ -531,6 +574,54 @@
                             <ComboBoxItem Content="한국어" Tag="ko-KR"
                                 Foreground="{DynamicResource TextPrimaryBrush}" Background="{DynamicResource BgCardBrush}"/>
                         </ComboBox>
+                    </StackPanel>
+                </Border>
+
+                <!-- 检查更新 / 关于 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,24" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrUpdateSection}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="12"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       Text="{Binding AppVersion, StringFormat=v{0}}"/>
+                            <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="12,0"
+                                       FontSize="12" TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       Text="{Binding UpdateStatus}"/>
+                            <Button Grid.Column="2" Style="{StaticResource GhostButton}"
+                                    Padding="14,6" FontSize="12"
+                                    Content="{DynamicResource StrUpdateCheck}"
+                                    Command="{Binding CheckUpdateCommand}"
+                                    IsEnabled="{Binding IsCheckingUpdate, Converter={x:Static ui:BoolNegateConverter.Instance}}"/>
+                        </Grid>
+                        <!-- 下载进度条：仅下载时显示 -->
+                        <Grid Margin="0,12,0,0"
+                              Visibility="{Binding IsDownloading, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar Grid.Column="0" Height="6" Minimum="0" Maximum="1"
+                                         VerticalAlignment="Center"
+                                         Value="{Binding DownloadProgress}"
+                                         Background="{DynamicResource BgCardBrush}"
+                                         Foreground="{DynamicResource AccentBrush}"
+                                         BorderThickness="0"/>
+                            <TextBlock Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
+                                       FontSize="12" FontFamily="Consolas"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       Text="{Binding DownloadPercentText}"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -597,6 +688,76 @@
                                TextDecorations="None">项目仓库 (GitHub)</Hyperlink>
                 </TextBlock>
             </Grid>
+        </Border>
+
+        <!-- ══════════════ 首次使用引导（覆盖全窗口，仅首次启动显示）══════════════ -->
+        <Border Grid.Row="0" Grid.RowSpan="3" Panel.ZIndex="100"
+                Background="#CC000000"
+                Visibility="{Binding ShowFirstRunGuide, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}">
+            <Border Background="{DynamicResource BgPanelBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                    CornerRadius="12" Padding="28,24" Width="440"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="{DynamicResource StrGuideTitle}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               FontSize="17" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <TextBlock Text="{DynamicResource StrGuideSubtitle}"
+                               Foreground="{DynamicResource TextSecBrush}"
+                               FontSize="12" TextWrapping="Wrap" Margin="0,0,0,18"/>
+
+                    <!-- 步骤 1 -->
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="28"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="22" Height="22" CornerRadius="11"
+                                Background="{DynamicResource AccentBrush}" VerticalAlignment="Top">
+                            <TextBlock Text="1" Foreground="White" FontSize="12" FontWeight="Bold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Grid.Column="1" Margin="8,0,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13"
+                                   Text="{DynamicResource StrGuideStep1}"/>
+                    </Grid>
+                    <!-- 步骤 2 -->
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="28"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="22" Height="22" CornerRadius="11"
+                                Background="{DynamicResource AccentBrush}" VerticalAlignment="Top">
+                            <TextBlock Text="2" Foreground="White" FontSize="12" FontWeight="Bold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Grid.Column="1" Margin="8,0,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13"
+                                   Text="{DynamicResource StrGuideStep2}"/>
+                    </Grid>
+                    <!-- 步骤 3 -->
+                    <Grid Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="28"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="22" Height="22" CornerRadius="11"
+                                Background="{DynamicResource AccentBrush}" VerticalAlignment="Top">
+                            <TextBlock Text="3" Foreground="White" FontSize="12" FontWeight="Bold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Grid.Column="1" Margin="8,0,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13"
+                                   Text="{DynamicResource StrGuideStep3}"/>
+                    </Grid>
+
+                    <Button HorizontalAlignment="Right" Style="{StaticResource PrimaryButton}"
+                            Padding="20,8" FontSize="13"
+                            Content="{DynamicResource StrGuideGotIt}"
+                            Click="GuideGotIt_Click"/>
+                </StackPanel>
+            </Border>
         </Border>
     </Grid>
 </Window>
