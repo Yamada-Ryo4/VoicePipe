@@ -10,10 +10,10 @@
     <Window.Resources>
         <Style x:Key="ConBtn" TargetType="Button">
             <Setter Property="Background"   Value="#1E1E1E"/>
-            <Setter Property="Foreground"   Value="#CCCCCC"/>
-            <Setter Property="BorderBrush"  Value="#333"/>
+            <Setter Property="Foreground"   Value="#D0D0D0"/>
+            <Setter Property="BorderBrush"  Value="#3A3A3A"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding"      Value="10,4"/>
+            <Setter Property="Padding"      Value="12,5"/>
             <Setter Property="FontFamily"   Value="Segoe UI"/>
             <Setter Property="FontSize"     Value="11"/>
             <Setter Property="Cursor"       Value="Hand"/>
@@ -23,12 +23,13 @@
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="#2D2D2D"/>
+                                <Setter Property="BorderBrush" Value="#10B981"/>
                             </Trigger>
                             <Trigger Property="IsPressed"   Value="True">
                                 <Setter Property="Opacity" Value="0.7"/>
@@ -48,19 +49,19 @@
         </Grid.RowDefinitions>
 
         <!-- ── Header ── -->
-        <Border Grid.Row="0" Background="#111" BorderBrush="#222" BorderThickness="0,0,0,1" Padding="14,8">
+        <Border Grid.Row="0" Background="#141414" BorderBrush="#262626" BorderThickness="0,0,0,1" Padding="16,10">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="🖥" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="🖥" FontSize="15" VerticalAlignment="Center" Margin="0,0,9,0"/>
                     <TextBlock Text="VoicePipe 实时控制台" FontFamily="Segoe UI" FontSize="13"
-                               FontWeight="SemiBold" Foreground="#DDD" VerticalAlignment="Center"/>
+                               FontWeight="SemiBold" Foreground="#E8E8E8" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <CheckBox x:Name="CbAutoScroll" Content="自动滚动" IsChecked="True"
-                              Foreground="#888" FontFamily="Segoe UI" FontSize="11"
+                              Foreground="#999" FontFamily="Segoe UI" FontSize="11"
                               VerticalAlignment="Center" Margin="0,0,16,0"/>
                     <CheckBox x:Name="CbTopmost" Content="置顶" IsChecked="False"
-                              Foreground="#888" FontFamily="Segoe UI" FontSize="11"
+                              Foreground="#999" FontFamily="Segoe UI" FontSize="11"
                               VerticalAlignment="Center" Margin="0,0,16,0"
                               Checked="CbTopmost_Changed" Unchecked="CbTopmost_Changed"/>
                     <Button Content="清空" Style="{StaticResource ConBtn}" Click="Clear_Click" Margin="0,0,8,0"/>
@@ -69,38 +70,35 @@
             </Grid>
         </Border>
 
-        <!-- ── Log Area ── -->
-        <ScrollViewer x:Name="Scroller" Grid.Row="1"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Auto"
-                      Background="#0C0C0C"
-                      Padding="4">
-            <RichTextBox x:Name="LogBox"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         IsReadOnly="True"
-                         FontFamily="Consolas"
-                         FontSize="11.5"
-                         Foreground="#CCC"
-                         Padding="8,4"
-                         VerticalScrollBarVisibility="Disabled"
-                         HorizontalScrollBarVisibility="Disabled"
-                         IsDocumentEnabled="True">
-                <RichTextBox.Document>
-                    <FlowDocument x:Name="LogDoc" LineHeight="3" PageWidth="3000"/>
-                </RichTextBox.Document>
-            </RichTextBox>
-        </ScrollViewer>
+        <!-- ── Log Area ──
+             性能：用 TextBox（纯文本、单一文本缓冲）替代 RichTextBox（每行一个 Paragraph，
+             数千行时内存/渲染开销大）。着色改为整体单色（控制台风格），靠级别前缀 [INF]/[WRN] 区分；
+             需要分级配色时仍可读，但不再为每行建富文本段落，几千行也流畅。 -->
+        <Border Grid.Row="1" Background="#0C0C0C">
+            <TextBox x:Name="LogBox"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     IsReadOnly="True"
+                     IsReadOnlyCaretVisible="False"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Foreground="#C8C8C8"
+                     Padding="12,8"
+                     TextWrapping="NoWrap"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     VerticalContentAlignment="Top"/>
+        </Border>
 
         <!-- ── Status Bar ── -->
-        <Border Grid.Row="2" Background="#111" BorderBrush="#222" BorderThickness="0,1,0,0" Padding="14,5">
+        <Border Grid.Row="2" Background="#141414" BorderBrush="#262626" BorderThickness="0,1,0,0" Padding="16,6">
             <Grid>
                 <TextBlock x:Name="TbStatus" Text="0 行"
-                           FontFamily="Consolas" FontSize="10"
-                           Foreground="#555" VerticalAlignment="Center"/>
+                           FontFamily="Consolas" FontSize="10.5"
+                           Foreground="#6A6A6A" VerticalAlignment="Center"/>
                 <TextBlock Text="右键主界面任意处 → 打开控制台"
-                           FontFamily="Segoe UI" FontSize="10"
-                           Foreground="#333" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                           FontFamily="Segoe UI" FontSize="10.5"
+                           Foreground="#444" HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>
         </Border>
     </Grid>

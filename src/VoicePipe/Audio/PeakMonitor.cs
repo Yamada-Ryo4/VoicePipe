@@ -63,6 +63,14 @@ public static class PeakMonitor
     private static long _lastDeviceCheckTick;
     private const int DeviceCheckIntervalMs = 1000;
 
+    // ★ PID→进程名 映射缓存 + 节流。映射几乎不变（进程名从启动到退出不变），
+    //   没必要每轮（15fps）都给全系统进程拍 Toolhelp 快照（几百进程 marshal + 字典分配 = 真实热点）。
+    //   节流到约每 1s 重取一次。注意：峰值数值（MasterPeakValue）仍每轮实时读取，动态音量条不受影响，
+    //   只是新启动 app 的名字最多晚 1s 进表（列表本身在 ViewModel 里就是 2s 刷一次，更慢）。
+    private static Dictionary<int, string>? _cachedPidName;
+    private static long _lastPidNameTick;
+    private const int PidNameRefreshIntervalMs = 1000;
+
     public static void Start()
     {
         if (_isRunning) return;
@@ -82,6 +90,10 @@ public static class PeakMonitor
 
         // 清理缓存的 COM 对象
         DisposeCachedDevices();
+
+        // ★ 重置 PID→名字 映射缓存，下次 Start 立即重新快照（不复用上次会话的陈旧映射）
+        _cachedPidName = null;
+        _lastPidNameTick = 0;
     }
 
     private static async Task MonitorLoop()
@@ -127,7 +139,15 @@ public static class PeakMonitor
                     var seenThisRound = new HashSet<int>();
                     // 本轮按名字聚合峰值（重建，保证随时间衰减）
                     var nameRound = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-                    var pidName = ProcessEnumerator.GetPidNameMap(); // PID→进程名 快照（一次性，便宜）
+                    // ★ PID→进程名 映射：节流到约 1s 取一次（快照贵，映射几乎不变）。
+                    //   峰值数值仍每轮实时读，动态音量条不受影响。
+                    var nowTickName = Environment.TickCount64;
+                    if (_cachedPidName == null || nowTickName - _lastPidNameTick >= PidNameRefreshIntervalMs)
+                    {
+                        _cachedPidName = ProcessEnumerator.GetPidNameMap();
+                        _lastPidNameTick = nowTickName;
+                    }
+                    var pidName = _cachedPidName;
                     for (int i = 0; i < sessions.Count; i++)
                     {
                         using var session = sessions[i];

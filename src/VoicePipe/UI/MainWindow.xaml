@@ -17,10 +17,37 @@
 
     <!-- ContextMenu 挂在 Window 上才能在任何位置右键弹出 -->
     <Window.ContextMenu>
-        <ContextMenu Background="#1A1A1A" BorderBrush="#333333" BorderThickness="1">
-            <MenuItem Header="🖥  打开实时控制台" Click="OpenConsole_Click"
-                      Foreground="#EEEEEE" Background="#1A1A1A"
-                      FontFamily="Segoe UI" FontSize="12"/>
+        <ContextMenu>
+            <ContextMenu.Template>
+                <ControlTemplate TargetType="ContextMenu">
+                    <!-- 圆角 + 阴影的现代卡片样式，替代系统默认带槽的老式菜单 -->
+                    <Border Background="#1C1C1C" BorderBrush="#383838" BorderThickness="1"
+                            CornerRadius="8" Padding="4" SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#000000" BlurRadius="14" ShadowDepth="2" Opacity="0.5"/>
+                        </Border.Effect>
+                        <StackPanel IsItemsHost="True"/>
+                    </Border>
+                </ControlTemplate>
+            </ContextMenu.Template>
+            <MenuItem Click="OpenConsole_Click" Foreground="#EAEAEA"
+                      FontFamily="Segoe UI" FontSize="12.5">
+                <MenuItem.Template>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="12,8">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="🖥" FontSize="13" Margin="0,0,9,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="打开实时控制台" Foreground="#EAEAEA" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2A2A2A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </MenuItem.Template>
+            </MenuItem>
         </ContextMenu>
     </Window.ContextMenu>
 
@@ -59,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.4" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.5" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"

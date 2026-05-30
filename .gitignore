@@ -1,0 +1,48 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio files
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.userprefs
+
+# VS Code
+.vscode/
+
+# Build artifacts
+*.dll
+*.exe
+*.pdb
+*.cache
+*.nupkg
+
+# IDEs
+.idea/
+*.rsuser
+
+# Inno Setup output
+Output/
+
+# ── 强制保留：仓库必须包含的运行时二进制（覆盖上面的 *.dll / *.exe 通配规则）──
+# 否则会漏掉降噪原生库与 VB-Cable 驱动安装器，导致克隆后无法构建/打包。
+!src/VoicePipe/native/rnnoise.dll
+!deps/**/*.dll
+!deps/**/*.exe
+!deps/**/*.sys
+!deps/VBCABLE_Setup_x64.exe
+!assets/**

@@ -21,7 +21,7 @@ This is incredibly useful for streamers, podcasters, and gamers who want to shar
 
 ## ⬇️ Download & Usage
 
-- **Direct Download**: [VoicePipeSetup.exe](https://github.com/Yamada-Ryo4/VoicePipe/releases/download/Release/VoicePipeSetup.exe) (Includes runtime and virtual audio cable driver. One-click install)
+- **Direct Download**: [VoicePipeSetup.exe](https://github.com/Yamada-Ryo4/VoicePipe/releases/download/v1.2.5/VoicePipeSetup.exe) (Includes runtime and virtual audio cable driver. One-click install)
 - **How to Use**:
   1. Install and open VoicePipe.
   2. Select the application you want to capture from the top dropdown (e.g., a game or music player).
