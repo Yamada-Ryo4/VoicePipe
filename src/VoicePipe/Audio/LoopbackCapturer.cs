@@ -33,7 +33,22 @@ public class LoopbackCapturer : IDisposable
     // 重试计数器，CaptureLoop 成功后由外层重置
     private volatile int _consecutiveFailures;
 
-    public event EventHandler<float[]>? SamplesAvailable;
+    // ★ 暂停标志：非活跃 PID 的 capturer 设为 true，
+    // 捕获循环仍排空 WASAPI 缓冲（防止缓冲满报错），但跳过内存拷贝和事件触发，
+    // 避免停止后 / 多源切换后旧 capturer 在后台空转浪费 CPU + GC。
+    private volatile bool _paused;
+    public bool Paused
+    {
+        get => _paused;
+        set => _paused = value;
+    }
+
+    public event EventHandler<(float[] Samples, int Count)>? SamplesAvailable;
+
+    // ★ 复用的样本缓冲区，避免每个 WASAPI packet 都 new float[]（持续 GC 压力）。
+    // 安全性：SamplesAvailable 的消费链是同步的（FeedApp → RingBuffer.Write 立即 Array.Copy 拷走），
+    // 回调返回前数据已被复制走，复用同一缓冲不会有数据竞争。
+    private float[] _sampleBuffer = new float[8192];
 
     /// <summary>
     /// 捕获彻底失败事件（超过最大重试次数后触发）。
@@ -42,7 +57,7 @@ public class LoopbackCapturer : IDisposable
     public event EventHandler<string>? CaptureFailed;
 
     public WaveFormat OutputFormat { get; } =
-        WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
+        WaveFormat.CreateIeeeFloatWaveFormat(AudioFormat.SampleRate, AudioFormat.Channels);
 
     public Task StartAsync(int targetPid)
     {
@@ -123,10 +138,10 @@ public class LoopbackCapturer : IDisposable
             {
                 wFormatTag     = 3,      // WAVE_FORMAT_IEEE_FLOAT
                 nChannels      = 2,
-                nSamplesPerSec = 44100,
+                nSamplesPerSec = AudioFormat.SampleRate,
                 wBitsPerSample = 32,
                 nBlockAlign    = 8,      // 2ch * 4bytes
-                nAvgBytesPerSec= 44100 * 8,
+                nAvgBytesPerSec= AudioFormat.SampleRate * 8,
                 cbSize         = 0
             };
 
@@ -181,8 +196,21 @@ public class LoopbackCapturer : IDisposable
                     const uint AUDCLNT_BUFFERFLAGS_SILENT = 0x2;
                     bool isSilent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
 
+                    // ★ 暂停状态：仍需 ReleaseBuffer 排空 WASAPI 缓冲（否则缓冲满会报错），
+                    // 但跳过内存拷贝和事件触发，避免空转开销。
+                    if (_paused)
+                    {
+                        captureClient.ReleaseBuffer(numFrames);
+                        captureClient.GetNextPacketSize(out packetSize);
+                        continue;
+                    }
+
                     int sampleCount = (int)(numFrames * 2); // 2ch
-                    var samples = new float[sampleCount];
+
+                    // ★ 复用缓冲区，按需扩容，避免每包 new float[]
+                    if (_sampleBuffer.Length < sampleCount)
+                        _sampleBuffer = new float[sampleCount];
+                    var samples = _sampleBuffer;
 
                     if (!isSilent && dataPtr != IntPtr.Zero)
                     {
@@ -196,9 +224,15 @@ public class LoopbackCapturer : IDisposable
                                 sampleCount * 4);
                         }
                     }
+                    else
+                    {
+                        // 静音包：清零有效区间（复用缓冲可能残留上一包数据）
+                        Array.Clear(samples, 0, sampleCount);
+                    }
 
                     captureClient.ReleaseBuffer(numFrames);
-                    SamplesAvailable?.Invoke(this, samples);
+                    // ★ 携带有效样本数，消费方只读 Count 个，不读整个复用缓冲
+                    SamplesAvailable?.Invoke(this, (samples, sampleCount));
                     captureClient.GetNextPacketSize(out packetSize);
                 }
             }

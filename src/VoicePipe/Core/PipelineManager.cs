@@ -1,6 +1,7 @@
 using NAudio.CoreAudioApi;
 using VoicePipe.Core;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace VoicePipe.Audio;
@@ -8,6 +9,7 @@ namespace VoicePipe.Audio;
 public class PipelineManager : IDisposable
 {
     private readonly AudioMixEngine _mixer = new();
+    private MonitorOutput? _monitor;
     // ★ 缓存所有用过的 LoopbackCapturer，按 PID 索引
     // Windows Per-Process Loopback API 不允许对已关闭的 PID 重新激活（E_UNEXPECTED），
     // 所以必须保持所有用过的 capturer 在后台运行，切换时直接复用。
@@ -15,6 +17,10 @@ public class PipelineManager : IDisposable
     private volatile int _currentPid;
     private MicCapturer? _micCapture;
     private VirtualMicWriter? _writer;
+
+    // ★ 串行化 StartAsync/StopAsync，防止运行中快速切换音源/麦克风时
+    // 两次 Start 重叠创建出两个 Writer / 竞态。
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     /// <summary>
     /// 应用音频捕获彻底失败时触发（LoopbackCapturer 重试耗尽）。
@@ -33,8 +39,80 @@ public class PipelineManager : IDisposable
         set => _mixer.MicGain = value;
     }
 
+    public bool MicMuted
+    {
+        get => _mixer.MicMuted;
+        set => _mixer.MicMuted = value;
+    }
+
+    public bool NoiseGateEnabled
+    {
+        get => _mixer.NoiseGateEnabled;
+        set => _mixer.NoiseGateEnabled = value;
+    }
+
+    public float NoiseGateThreshold
+    {
+        get => _mixer.NoiseGateThreshold;
+        set => _mixer.NoiseGateThreshold = value;
+    }
+
+    /// <summary>降噪强度（干湿混合比，0~1）。1=最彻底去噪，0=纯原声。仅 Mic_Path。</summary>
+    public float DenoiseStrength
+    {
+        get => _mixer.DenoiseStrength;
+        set => _mixer.DenoiseStrength = value;
+    }
+
+    // ── 本地监听（耳机回放）pass-through。独立于 VB-Cable 路径，绝不影响其 10ms 延迟。──
+
+    /// <summary>本地监听主开关：把混音回放到默认播放设备（耳机）。</summary>
+    public bool MonitorEnabled
+    {
+        get => _mixer.MonitorEnabled;
+        set
+        {
+            _mixer.MonitorEnabled = value;
+            // 监听输出链按开关启停（仅在管线运行、已有 _monitor 实例时即时生效）
+            if (value) _monitor?.Start();
+            else _monitor?.Stop();
+        }
+    }
+
+    /// <summary>子开关：单独监听 App 音频。两个子开关都关 + 主开关开 = 监听整个输出。</summary>
+    public bool MonitorApp
+    {
+        get => _mixer.MonitorApp;
+        set => _mixer.MonitorApp = value;
+    }
+
+    /// <summary>子开关：单独监听麦克风。</summary>
+    public bool MonitorMic
+    {
+        get => _mixer.MonitorMic;
+        set => _mixer.MonitorMic = value;
+    }
+
+    // 监听目标设备 ID（空=系统默认）。在 _monitor 未创建时先记住，创建时套用。
+    private string _monitorDeviceId = "";
+
+    /// <summary>监听输出目标设备 ID（空=系统默认）。运行中改会即时切设备。</summary>
+    public string MonitorDeviceId
+    {
+        get => _monitorDeviceId;
+        set
+        {
+            _monitorDeviceId = value ?? "";
+            if (_monitor != null) _monitor.TargetDeviceId = _monitorDeviceId;
+        }
+    }
+
     public async Task StartAsync(int targetPid, string micId)
     {
+        // ★ 串行化，防止运行中快速切换源/麦克风导致两次 Start 重叠
+        await _gate.WaitAsync();
+        try
+        {
         // ★ 后台线程执行所有重量级 COM 操作，避免 UI 冻结
         await Task.Run(() =>
         {
@@ -51,17 +129,22 @@ public class PipelineManager : IDisposable
         // 切换当前 PID（影响哪个 capturer 的数据会被喂入 mixer）
         _currentPid = targetPid;
 
+        // ★ 暂停所有非活跃 PID 的 capturer，避免后台空转；只激活当前 PID
+        foreach (var kv in _loopbackCache)
+            kv.Value.Paused = kv.Key != targetPid;
+
         // 查找或创建该 PID 的 LoopbackCapturer（已在后台线程）
         if (!_loopbackCache.TryGetValue(targetPid, out var capturer))
         {
             capturer = new LoopbackCapturer();
+            capturer.Paused = false;
 
             // 闭包捕获 pid，只有当前活跃 PID 的数据才喂入 mixer
             int pid = targetPid;
-            capturer.SamplesAvailable += (_, floats) =>
+            capturer.SamplesAvailable += (_, args) =>
             {
                 if (_currentPid == pid)
-                    _mixer.FeedApp(floats);
+                    _mixer.FeedApp(args.Samples, args.Count);
             };
 
             capturer.CaptureFailed += (_, msg) => CaptureFailed?.Invoke(this, msg);
@@ -81,23 +164,45 @@ public class PipelineManager : IDisposable
 
         // MicCapturer.Start 内部已使用 Task.Run，不会阻塞
         _micCapture = new MicCapturer();
-        _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Format);
+        _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
         _micCapture.Start(micId);
+
+        // ★ 本地监听：若主开关开着，启动独立监听输出链（不影响 VB-Cable）
+        _monitor ??= new MonitorOutput(_mixer);
+        _monitor.TargetDeviceId = _monitorDeviceId; // 套用持久化的监听设备（空=系统默认）
+        if (_mixer.MonitorEnabled) _monitor.Start();
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task StopAsync()
     {
+        await _gate.WaitAsync();
+        try
+        {
         _writer?.Stop();
         _writer = null;
 
+        // ★ 停止本地监听输出（独立链，停止不影响其它）
+        _monitor?.Stop();
+
         // 不销毁任何 LoopbackCapturer — 它们在后台保持运行
-        // 因为 _currentPid 仍然设置着，数据会继续喂入 mixer
-        // 但 writer 已停止所以不会输出
+        // 但 ★ 全部暂停，避免停止后继续拷贝数据 + 触发事件空转
+        foreach (var capturer in _loopbackCache.Values)
+            capturer.Paused = true;
 
         _micCapture?.Dispose();
         _micCapture = null;
 
         _currentPid = 0;
+        }
+        finally
+        {
+            _gate.Release();
+        }
 
         await Task.CompletedTask;
     }
@@ -109,6 +214,9 @@ public class PipelineManager : IDisposable
     public void StopAppOnly()
     {
         _currentPid = 0;
+        // ★ 暂停所有 loopback（App 不再混入），但 Writer/Mic 继续直通
+        foreach (var capturer in _loopbackCache.Values)
+            capturer.Paused = true;
     }
 
     /// <summary>
@@ -148,6 +256,10 @@ public class PipelineManager : IDisposable
         _writer?.Stop();
         _writer = null;
 
+        // ★ 释放本地监听输出链
+        try { _monitor?.Dispose(); } catch { }
+        _monitor = null;
+
         foreach (var capturer in _loopbackCache.Values)
         {
             try { capturer.Dispose(); } catch { }
@@ -156,5 +268,10 @@ public class PipelineManager : IDisposable
 
         _micCapture?.Dispose();
         _micCapture = null;
+
+        // ★ 释放混音器持有的 RNNoise 原生状态，避免非托管内存泄漏 (B1)
+        try { _mixer.Dispose(); } catch { }
+
+        _gate.Dispose();
     }
 }

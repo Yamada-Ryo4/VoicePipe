@@ -1,6 +1,7 @@
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="clr-namespace:VoicePipe.UI">
 
     <!-- ═══ 颜色系统 (暗色) ═══ -->
     <!-- 背景：稍微灰一点的黑 -->
@@ -12,6 +13,8 @@
     <Color x:Key="AccentColor">#10B981</Color>
     <Color x:Key="AccentHoverColor">#DDDDDD</Color>
     <Color x:Key="AccentDangerColor">#FF5555</Color>
+    <!-- 削波指示色（红） -->
+    <Color x:Key="ClipColor">#FF5555</Color>
 
     <!-- 文本与边框 -->
     <Color x:Key="TextPrimaryColor">#EEEEEE</Color>
@@ -34,6 +37,7 @@
     <SolidColorBrush x:Key="TextSecBrush"     Color="{StaticResource TextSecondaryColor}"/>
     <SolidColorBrush x:Key="BorderBrush"      Color="{StaticResource BorderColor}"/>
     <SolidColorBrush x:Key="AccentDangerBrush" Color="{StaticResource AccentDangerColor}"/>
+    <SolidColorBrush x:Key="ClipBrush"        Color="{StaticResource ClipColor}"/>
     <SolidColorBrush x:Key="Transparent"      Color="Transparent"/>
 
     <!-- 兼容旧的渐变资源（替换为单色） -->
@@ -322,6 +326,77 @@
                 <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <!-- ═══ CheckBox — 现代开关样式 (Toggle Switch) ═══ -->
+    <Style TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Border x:Name="Track" Width="40" Height="22" CornerRadius="11"
+                                Background="{StaticResource BorderBrush}" VerticalAlignment="Center">
+                            <Border x:Name="Thumb" Width="16" Height="16" CornerRadius="8"
+                                    Background="{StaticResource TextSecBrush}"
+                                    HorizontalAlignment="Left" Margin="3,0,0,0"/>
+                        </Border>
+                        <ContentPresenter VerticalAlignment="Center" Margin="10,0,0,0"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentBrush}"/>
+                            <Setter TargetName="Thumb" Property="Background" Value="White"/>
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
+                            <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.85"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ═══ HotkeyCaptureControl — 圆角按钮（与 ComboBox 一致） ═══ -->
+    <Style TargetType="ui:HotkeyCaptureControl">
+        <Setter Property="Background" Value="{StaticResource BgCardBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ui:HotkeyCaptureControl">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
 </ResourceDictionary>

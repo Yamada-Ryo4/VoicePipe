@@ -3,11 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:VoicePipe.ViewModels"
         xmlns:ui="clr-namespace:VoicePipe.UI"
+        xmlns:tb="http://www.hardcodet.net/taskbar"
         Title="VoicePipe" Height="580" Width="780"
         MinHeight="500" MinWidth="680"
         Background="{DynamicResource BgDeepBrush}"
         WindowStartupLocation="CenterScreen"
-        ResizeMode="CanResize">
+        ResizeMode="CanResize"
+        Closing="Window_Closing">
 
     <Window.DataContext>
         <vm:MainViewModel/>
@@ -29,6 +31,18 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <!-- ── 系统托盘图标（缩托盘后常驻，双击还原，右键菜单显示/退出）── -->
+        <tb:TaskbarIcon x:Name="TrayIcon"
+                        ToolTipText="VoicePipe"
+                        TrayMouseDoubleClick="Tray_Restore">
+            <tb:TaskbarIcon.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="{DynamicResource StrTrayShow}" Click="Tray_Restore"/>
+                    <MenuItem Header="{DynamicResource StrTrayExit}" Click="Tray_Exit"/>
+                </ContextMenu>
+            </tb:TaskbarIcon.ContextMenu>
+        </tb:TaskbarIcon>
+
         <!-- ══════════════ HEADER ══════════════ -->
         <Border Grid.Row="0" Background="{DynamicResource BgDeepBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
@@ -45,7 +59,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.1.1" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -86,32 +100,24 @@
                     </StackPanel>
                 </Border>
 
-                <ComboBox Grid.Column="3" Width="80" Height="30"
-                          VerticalAlignment="Center" SelectedIndex="0"
-                          Foreground="{DynamicResource TextPrimaryBrush}"
-                          Background="{DynamicResource BgCardBrush}"
-                          SelectionChanged="Language_SelectionChanged" x:Name="LangSelector">
-                    <ComboBoxItem Content="简中" Tag="zh-CN"
-                        Foreground="{DynamicResource TextPrimaryBrush}"
-                        Background="{DynamicResource BgCardBrush}"/>
-                    <ComboBoxItem Content="繁中" Tag="zh-TW"
-                        Foreground="{DynamicResource TextPrimaryBrush}"
-                        Background="{DynamicResource BgCardBrush}"/>
-                    <ComboBoxItem Content="EN" Tag="en-US"
-                        Foreground="{DynamicResource TextPrimaryBrush}"
-                        Background="{DynamicResource BgCardBrush}"/>
-                    <ComboBoxItem Content="日本語" Tag="ja-JP"
-                        Foreground="{DynamicResource TextPrimaryBrush}"
-                        Background="{DynamicResource BgCardBrush}"/>
-                    <ComboBoxItem Content="한국어" Tag="ko-KR"
-                        Foreground="{DynamicResource TextPrimaryBrush}"
-                        Background="{DynamicResource BgCardBrush}"/>
-                </ComboBox>
+                <Border Grid.Column="4" CornerRadius="14"
+                        BorderBrush="{DynamicResource TextSecBrush}" BorderThickness="1"
+                        Background="{DynamicResource BgCardBrush}"
+                        VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand"
+                        MouseLeftButtonUp="ToggleSettings_Click" Padding="10,6"
+                        ToolTip="{DynamicResource StrSettings}">
+                    <TextBlock x:Name="SettingsIcon" Text="⚙" FontSize="14" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </Border>
             </Grid>
         </Border>
 
         <!-- ══════════════ MAIN CONTENT ══════════════ -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0">
+        <ScrollViewer x:Name="MainContentView" Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0"
+                      RenderTransformOrigin="0.5,0.5">
+            <ScrollViewer.RenderTransform>
+                <TranslateTransform x:Name="MainContentTransform" X="0"/>
+            </ScrollViewer.RenderTransform>
             <StackPanel Margin="24,20,24,20">
 
                 <!-- ── App 音频源 ── -->
@@ -150,7 +156,7 @@
                                             <Rectangle Height="4" Fill="{DynamicResource BorderBrush}" RadiusX="2" RadiusY="2"/>
                                             <Rectangle Height="4" RadiusX="2" RadiusY="2"
                                                        HorizontalAlignment="Left"
-                                                       Fill="{DynamicResource AccentBrush}">
+                                                       Fill="{Binding PeakLevel, Converter={x:Static ui:PeakToClipBrushConverter.Instance}}">
                                                 <Rectangle.Width>
                                                     <Binding Path="PeakLevel" Converter="{x:Static ui:PeakToWidthConverter.Instance}"
                                                              ConverterParameter="60"/>
@@ -181,6 +187,8 @@
                         <ComboBox ItemsSource="{Binding MicDevices}"
                                   SelectedItem="{Binding SelectedMic}"
                                   Height="36" FontSize="12"
+                                  DropDownOpened="MicCombo_DropDownOpened"
+                                  DropDownClosed="MicCombo_DropDownClosed"
                                   Foreground="{DynamicResource TextPrimaryBrush}"
                                   Background="{DynamicResource BgCardBrush}">
                             <ComboBox.ItemTemplate>
@@ -198,7 +206,7 @@
                                             <Rectangle Height="4" Fill="{DynamicResource BorderBrush}" RadiusX="2" RadiusY="2"/>
                                             <Rectangle Height="4" RadiusX="2" RadiusY="2"
                                                        HorizontalAlignment="Left"
-                                                       Fill="{DynamicResource AccentBrush}">
+                                                       Fill="{Binding PeakLevel, Converter={x:Static ui:PeakToClipBrushConverter.Instance}}">
                                                 <Rectangle.Width>
                                                     <Binding Path="PeakLevel" Converter="{x:Static ui:PeakToWidthConverter.Instance}"
                                                              ConverterParameter="60"/>
@@ -310,6 +318,222 @@
                           Foreground="{DynamicResource TextSecBrush}" FontSize="12">
                     <TextBlock Text="{DynamicResource StrMicPassthrough}"/>
                 </CheckBox>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ══════════════ SETTINGS VIEW (主页面内嵌) ══════════════ -->
+        <ScrollViewer x:Name="SettingsView" Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0"
+                      Visibility="Collapsed"
+                      RenderTransformOrigin="0.5,0.5">
+            <ScrollViewer.RenderTransform>
+                <TranslateTransform x:Name="SettingsTransform" X="0"/>
+            </ScrollViewer.RenderTransform>
+            <StackPanel Margin="24,20,24,20">
+
+                <!-- 标题栏 + 返回 -->
+                <Grid Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" CornerRadius="8" Cursor="Hand"
+                            Background="{DynamicResource BgCardBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                            Padding="10,5" VerticalAlignment="Center" Margin="0,0,12,0"
+                            MouseLeftButtonUp="ToggleSettings_Click">
+                        <TextBlock Text="←" FontSize="15" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    </Border>
+                    <TextBlock Grid.Column="1" Text="{DynamicResource StrSettingsTitle}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- 全局热键 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <TextBlock Text="{DynamicResource StrHotkeys}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <Button Content="{DynamicResource StrHotkeyReset}"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Style="{StaticResource GhostButton}"
+                                    Padding="10,3" FontSize="11"
+                                    Click="ResetHotkeys_Click"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="220"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{DynamicResource StrHotkeyMuteMic}"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <ui:HotkeyCaptureControl Grid.Column="1" Height="32"
+                                       Background="{DynamicResource BgCardBrush}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                       Binding="{Binding MuteHotkey, Mode=TwoWay}"
+                                       HasConflict="{Binding MuteHotkeyConflict}"/>
+                        </Grid>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="220"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{DynamicResource StrHotkeyTogglePipeline}"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <ui:HotkeyCaptureControl Grid.Column="1" Height="32"
+                                       Background="{DynamicResource BgCardBrush}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                       Binding="{Binding PipelineHotkey, Mode=TwoWay}"
+                                       HasConflict="{Binding PipelineHotkeyConflict}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 托盘 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrTrayBehavior}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <CheckBox IsChecked="{Binding MinimizeToTray, Mode=TwoWay}"
+                                  Foreground="{DynamicResource TextPrimaryBrush}">
+                            <TextBlock Text="{DynamicResource StrMinimizeToTray}"/>
+                        </CheckBox>
+                    </StackPanel>
+                </Border>
+
+                <!-- 降噪（RNNoise 神经网络，自动工作，无需阈值） -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrNoiseGate}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <CheckBox IsChecked="{Binding NoiseGateEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource TextPrimaryBrush}">
+                            <TextBlock Text="{DynamicResource StrNoiseGateEnable}"/>
+                        </CheckBox>
+
+                        <!-- 降噪强度（干湿混合）：调小保留更多原声让人声更自然，调大更彻底去噪 -->
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="50"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{DynamicResource StrDenoiseStrength}"
+                                       VerticalAlignment="Center" FontSize="12" Margin="0,0,12,0"
+                                       Foreground="{DynamicResource TextSecBrush}"/>
+                            <ui:SmoothSlider Grid.Column="1" Value="{Binding DenoiseStrength, Mode=TwoWay}"
+                                    Minimum="0" Maximum="1" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Text="{Binding DenoiseStrength, StringFormat={}{0:P0}}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 本地监听（把混音回放到耳机，实时听自己发出去的效果；独立链，不影响 VB-Cable 延迟） -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrMonitor}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <CheckBox IsChecked="{Binding MonitorEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource TextPrimaryBrush}">
+                            <TextBlock Text="{DynamicResource StrMonitorEnable}"/>
+                        </CheckBox>
+
+                        <!-- 子开关：两个都关 = 监听整个 VoicePipe 输出；仅在主开关开时显示 -->
+                        <StackPanel Margin="20,10,0,0"
+                                    Visibility="{Binding MonitorEnabled, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}">
+                            <!-- 监听输出设备选择（默认=系统默认） -->
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{DynamicResource StrMonitorDevice}"
+                                           VerticalAlignment="Center" FontSize="12" Margin="0,0,12,0"
+                                           Foreground="{DynamicResource TextSecBrush}"/>
+                                <ComboBox Grid.Column="1" Height="30"
+                                          ItemsSource="{Binding MonitorDevices}"
+                                          SelectedItem="{Binding SelectedMonitorDevice, Mode=TwoWay}"
+                                          DisplayMemberPath="Name"/>
+                            </Grid>
+                            <CheckBox IsChecked="{Binding MonitorApp, Mode=TwoWay}"
+                                      Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8">
+                                <TextBlock Text="{DynamicResource StrMonitorApp}"/>
+                            </CheckBox>
+                            <CheckBox IsChecked="{Binding MonitorMic, Mode=TwoWay}"
+                                      Foreground="{DynamicResource TextPrimaryBrush}">
+                                <TextBlock Text="{DynamicResource StrMonitorMic}"/>
+                            </CheckBox>
+                            <TextBlock Text="{DynamicResource StrMonitorHint}"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 自动启动 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,24" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrAutoStart}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <CheckBox IsChecked="{Binding AutoStartBoot, Mode=TwoWay}"
+                                  Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12">
+                            <TextBlock Text="{DynamicResource StrAutoStartBoot}"/>
+                        </CheckBox>
+                        <CheckBox IsChecked="{Binding AutoStartPipelineSetting, Mode=TwoWay}"
+                                  Foreground="{DynamicResource TextPrimaryBrush}">
+                            <TextBlock Text="{DynamicResource StrAutoStartPipeline}"/>
+                        </CheckBox>
+                    </StackPanel>
+                </Border>
+
+                <!-- 语言 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,24" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrLanguageTheme}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <ComboBox x:Name="LangSelector" Width="160" Height="32"
+                                  HorizontalAlignment="Left"
+                                  Foreground="{DynamicResource TextPrimaryBrush}"
+                                  Background="{DynamicResource BgCardBrush}"
+                                  SelectionChanged="Language_SelectionChanged">
+                            <ComboBoxItem Content="简体中文" Tag="zh-CN"
+                                Foreground="{DynamicResource TextPrimaryBrush}" Background="{DynamicResource BgCardBrush}"/>
+                            <ComboBoxItem Content="繁體中文" Tag="zh-TW"
+                                Foreground="{DynamicResource TextPrimaryBrush}" Background="{DynamicResource BgCardBrush}"/>
+                            <ComboBoxItem Content="English" Tag="en-US"
+                                Foreground="{DynamicResource TextPrimaryBrush}" Background="{DynamicResource BgCardBrush}"/>
+                            <ComboBoxItem Content="日本語" Tag="ja-JP"
+                                Foreground="{DynamicResource TextPrimaryBrush}" Background="{DynamicResource BgCardBrush}"/>
+                            <ComboBoxItem Content="한국어" Tag="ko-KR"
+                                Foreground="{DynamicResource TextPrimaryBrush}" Background="{DynamicResource BgCardBrush}"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+
             </StackPanel>
         </ScrollViewer>
 

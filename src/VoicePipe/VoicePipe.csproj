@@ -27,5 +27,13 @@
     <Resource Include="assets\voicepipe.ico" Condition="Exists('assets\voicepipe.ico')" />
   </ItemGroup>
 
+  <!-- RNNoise 原生降噪库（x64），随程序输出到运行目录供 P/Invoke 加载 -->
+  <ItemGroup>
+    <None Include="native\rnnoise.dll" Condition="Exists('native\rnnoise.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>rnnoise.dll</Link>
+    </None>
+  </ItemGroup>
+
 </Project>
 

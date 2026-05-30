@@ -10,6 +10,17 @@ namespace VoicePipe.UI;
 /// </summary>
 public class WaveformControl : Control
 {
+    // ★ 缓存的画笔/画刷，避免每帧 OnRender 都 new（每秒 20~30 次重建 = GC 压力）
+    private static readonly Pen _centerLinePen;
+    private Pen? _cachedLinePen;
+    private Brush? _cachedLineBrushRef;
+
+    static WaveformControl()
+    {
+        _centerLinePen = new Pen(new SolidColorBrush(Color.FromArgb(40, 128, 128, 128)), 0.5);
+        _centerLinePen.Freeze();
+    }
+
     public static readonly DependencyProperty WaveformDataProperty =
         DependencyProperty.Register(nameof(WaveformData), typeof(float[]),
             typeof(WaveformControl),
@@ -50,10 +61,15 @@ public class WaveformControl : Control
         double midY = h / 2;
         double scaleX = w / data.Length;
 
-        // 使用 LineBrush 或默认颜色
-        var gradPen = new Pen(LineBrush ?? Brushes.White, 1.5);
-        // 如果 Brush 是被冻结的，这里就不需要重复冻结了，或者可以尝试 Clone 后冻结
-        // gradPen.Freeze();
+        // ★ 波形画笔：仅当 LineBrush 引用变化时才重建并冻结，否则复用缓存
+        var lineBrush = LineBrush ?? Brushes.White;
+        if (_cachedLinePen == null || !ReferenceEquals(_cachedLineBrushRef, lineBrush))
+        {
+            _cachedLinePen = new Pen(lineBrush, 1.5);
+            if (_cachedLinePen.CanFreeze) _cachedLinePen.Freeze();
+            _cachedLineBrushRef = lineBrush;
+        }
+        var gradPen = _cachedLinePen;
 
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())
@@ -68,10 +84,8 @@ public class WaveformControl : Control
         }
         geometry.Freeze();
 
-        // 中心线 (稍微浅一些的颜色)
-        var centerLinePen = new Pen(new SolidColorBrush(Color.FromArgb(40, 128, 128, 128)), 0.5);
-        if (centerLinePen.CanFreeze) centerLinePen.Freeze();
-        dc.DrawLine(centerLinePen, new Point(0, midY), new Point(w, midY));
+        // ★ 中心线用缓存的冻结画笔
+        dc.DrawLine(_centerLinePen, new Point(0, midY), new Point(w, midY));
 
         dc.DrawGeometry(null, gradPen, geometry);
     }

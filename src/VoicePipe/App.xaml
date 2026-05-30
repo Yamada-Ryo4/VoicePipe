@@ -1,11 +1,16 @@
 <Application x:Class="VoicePipe.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             ShutdownMode="OnMainWindowClose">
+             ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/Dark.xaml"/>
+                <!-- en-US is merged as the fallback BASE beneath the active language.
+                     WPF resolves keys by searching merged dictionaries in reverse order,
+                     so the active language (merged last/on top) wins and any key missing
+                     from it falls back to en-US below. -->
+                <ResourceDictionary Source="Langs/en-US.xaml"/>
                 <ResourceDictionary Source="Langs/zh-CN.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

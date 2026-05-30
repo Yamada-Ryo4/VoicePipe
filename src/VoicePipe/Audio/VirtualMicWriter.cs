@@ -17,7 +17,7 @@ public class VirtualMicWriter : IDisposable
     private bool _disposed;
 
     public static readonly WaveFormat OutputFormat =
-        WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
+        WaveFormat.CreateIeeeFloatWaveFormat(AudioFormat.SampleRate, AudioFormat.Channels);
 
     /// <summary>
     /// 初始化并启动输出。直接将 AudioMixEngine 作为数据源。
@@ -60,23 +60,33 @@ public class VirtualMicWriter : IDisposable
         {
             using var enumerator = new MMDeviceEnumerator();
             var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
-            
+
+            MMDevice? match = null;
             foreach (var device in devices)
             {
-                if (device.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
+                // ★ 命中前不要提前 return：否则循环里此前遍历过的非命中设备不会被 Dispose（COM 泄漏，
+                //   且 IsCableInputAvailable 每 2 秒走一次会持续累积）。命中后保存、其余一律 Dispose。
+                if (match == null &&
+                    device.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (logFound)
-                        Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input → {Name}", device.FriendlyName);
-                    return device;
+                    match = device; // 保留命中的，调用方负责 Dispose
                 }
-                device.Dispose();
+                else
+                {
+                    device.Dispose();
+                }
             }
+
+            if (match != null && logFound)
+                Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input → {Name}", match.FriendlyName);
+
+            return match;
         }
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "VirtualMicWriter: 查找 CABLE Input 设备异常");
         }
-        
+
         return null;
     }
 

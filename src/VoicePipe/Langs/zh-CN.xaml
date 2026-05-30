@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
     <sys:String x:Key="StrSubtitle">捕获 App 音频 + 混合麦克风 → 输出到虚拟麦克风</sys:String>
@@ -19,4 +19,37 @@
     <sys:String x:Key="StrPid">PID:</sys:String>
     <sys:String x:Key="StrThemeDark">深色</sys:String>
     <sys:String x:Key="StrThemeLight">浅色</sys:String>
+    <sys:String x:Key="StrSettings">设置</sys:String>
+    <sys:String x:Key="StrSettingsTitle">VoicePipe 设置</sys:String>
+    <sys:String x:Key="StrHotkeys">全局热键</sys:String>
+    <sys:String x:Key="StrHotkeyMuteMic">切换麦克风静音</sys:String>
+    <sys:String x:Key="StrHotkeyTogglePipeline">开始 / 停止混音</sys:String>
+    <sys:String x:Key="StrHotkeyRecording">请按快捷键...</sys:String>
+    <sys:String x:Key="StrHotkeyClear">清除</sys:String>
+    <sys:String x:Key="StrHotkeyConflict">冲突 — 已被占用</sys:String>
+    <sys:String x:Key="StrHotkeyNone">未设置</sys:String>
+    <sys:String x:Key="StrHotkeyReset">重置</sys:String>
+    <sys:String x:Key="StrTrayBehavior">托盘</sys:String>
+    <sys:String x:Key="StrMinimizeToTray">关闭时最小化到托盘而非退出</sys:String>
+    <sys:String x:Key="StrTrayShow">显示 VoicePipe</sys:String>
+    <sys:String x:Key="StrTrayExit">退出</sys:String>
+    <sys:String x:Key="StrNoiseGate">降噪</sys:String>
+    <sys:String x:Key="StrNoiseGateEnable">启用降噪（仅麦克风）</sys:String>
+    <sys:String x:Key="StrNoiseGateThreshold">阈值</sys:String>
+    <sys:String x:Key="StrDenoiseStrength">强度</sys:String>
+    <sys:String x:Key="StrMonitor">本地监听</sys:String>
+    <sys:String x:Key="StrMonitorEnable">开启监听</sys:String>
+    <sys:String x:Key="StrMonitorApp">监听 App 音频</sys:String>
+    <sys:String x:Key="StrMonitorMic">监听麦克风</sys:String>
+    <sys:String x:Key="StrMonitorHint">两个都关时，监听整个 VoicePipe 输出。</sys:String>
+    <sys:String x:Key="StrMonitorDevice">输出设备</sys:String>
+    <sys:String x:Key="StrMonitorDefaultDevice">系统默认</sys:String>
+    <sys:String x:Key="StrAutoStart">自动启动</sys:String>
+    <sys:String x:Key="StrAutoStartBoot">Windows 登录时启动 VoicePipe</sys:String>
+    <sys:String x:Key="StrAutoStartPipeline">启动时恢复上次混音设置</sys:String>
+    <sys:String x:Key="StrAutoStartNoSource">未找到上次的音频源 — 未启动管线</sys:String>
+    <sys:String x:Key="StrAutoStartNoMic">未找到上次的麦克风 — 未启动管线</sys:String>
+    <sys:String x:Key="StrClipping">削波</sys:String>
+    <sys:String x:Key="StrLanguageTheme">语言和主题</sys:String>
+    <sys:String x:Key="StrMicMuted">麦克风已静音</sys:String>
 </ResourceDictionary>

@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
     <sys:String x:Key="StrSubtitle">앱 오디오 캡처 + 마이크 믹싱 → 가상 마이크로 출력</sys:String>
@@ -19,4 +19,37 @@
     <sys:String x:Key="StrPid">PID:</sys:String>
     <sys:String x:Key="StrThemeDark">다크</sys:String>
     <sys:String x:Key="StrThemeLight">라이트</sys:String>
+    <sys:String x:Key="StrSettings">설정</sys:String>
+    <sys:String x:Key="StrSettingsTitle">VoicePipe 설정</sys:String>
+    <sys:String x:Key="StrHotkeys">전역 단축키</sys:String>
+    <sys:String x:Key="StrHotkeyMuteMic">마이크 음소거 전환</sys:String>
+    <sys:String x:Key="StrHotkeyTogglePipeline">믹싱 시작 / 정지</sys:String>
+    <sys:String x:Key="StrHotkeyRecording">키를 누르세요...</sys:String>
+    <sys:String x:Key="StrHotkeyClear">지우기</sys:String>
+    <sys:String x:Key="StrHotkeyConflict">충돌 — 이미 사용 중</sys:String>
+    <sys:String x:Key="StrHotkeyNone">설정 안 됨</sys:String>
+    <sys:String x:Key="StrHotkeyReset">재설정</sys:String>
+    <sys:String x:Key="StrTrayBehavior">트레이</sys:String>
+    <sys:String x:Key="StrMinimizeToTray">종료하지 않고 트레이로 최소화</sys:String>
+    <sys:String x:Key="StrTrayShow">VoicePipe 표시</sys:String>
+    <sys:String x:Key="StrTrayExit">종료</sys:String>
+    <sys:String x:Key="StrNoiseGate">노이즈 제거</sys:String>
+    <sys:String x:Key="StrNoiseGateEnable">노이즈 제거 활성화 (마이크 전용)</sys:String>
+    <sys:String x:Key="StrNoiseGateThreshold">임계값</sys:String>
+    <sys:String x:Key="StrDenoiseStrength">강도</sys:String>
+    <sys:String x:Key="StrMonitor">로컬 모니터링</sys:String>
+    <sys:String x:Key="StrMonitorEnable">모니터링 켜기</sys:String>
+    <sys:String x:Key="StrMonitorApp">앱 오디오 모니터링</sys:String>
+    <sys:String x:Key="StrMonitorMic">마이크 모니터링</sys:String>
+    <sys:String x:Key="StrMonitorHint">둘 다 끄면 VoicePipe 전체 출력을 모니터링합니다.</sys:String>
+    <sys:String x:Key="StrMonitorDevice">출력 장치</sys:String>
+    <sys:String x:Key="StrMonitorDefaultDevice">시스템 기본값</sys:String>
+    <sys:String x:Key="StrAutoStart">자동 시작</sys:String>
+    <sys:String x:Key="StrAutoStartBoot">Windows 로그인 시 VoicePipe 실행</sys:String>
+    <sys:String x:Key="StrAutoStartPipeline">실행 시 마지막 믹싱 설정 복원</sys:String>
+    <sys:String x:Key="StrAutoStartNoSource">마지막 오디오 소스를 찾을 수 없음 — 파이프라인 시작 안 됨</sys:String>
+    <sys:String x:Key="StrAutoStartNoMic">마지막 마이크를 찾을 수 없음 — 파이프라인 시작 안 됨</sys:String>
+    <sys:String x:Key="StrClipping">클리핑</sys:String>
+    <sys:String x:Key="StrLanguageTheme">언어 및 테마</sys:String>
+    <sys:String x:Key="StrMicMuted">마이크 음소거됨</sys:String>
 </ResourceDictionary>

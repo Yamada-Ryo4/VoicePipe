@@ -11,48 +11,142 @@ namespace VoicePipe.Audio;
 /// - 波形分析内联到 Read()，消除额外的 lock + 数组拷贝
 /// - 重采样使用缓存的缓冲区
 /// </summary>
-public class AudioMixEngine : IWaveProvider
+public class AudioMixEngine : IWaveProvider, IDisposable
 {
     // 200ms 缓冲：足够应对 WASAPI 回调间隔波动
-    private readonly RingBuffer _appBuffer = new(44100 * 2 * 200 / 1000);
-    private readonly RingBuffer _micBuffer = new(44100 * 2 * 200 / 1000);
+    private readonly RingBuffer _appBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 200 / 1000);
+    private readonly RingBuffer _micBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 200 / 1000);
 
-    // AppGain / MicGain：各自信源的直接幅度系数，相互独立。
-    // volatile 确保播放线程始终读到 UI 线程写入的最新值，防止 JIT 缓存旧值。
-    private volatile float _appGain = 0.75f;
-    private volatile float _micGain = 0.75f;
-    private volatile float _appGainSquared = 0.5625f; // 0.75^2
-    private volatile float _micGainSquared = 0.5625f; // 0.75^2
+    // ★ 本地监听（把混音送到耳机/默认播放设备）专用的独立缓冲。
+    //   完全独立于 VB-Cable 输出路径：Read() 在生成 VB-Cable 数据的同一循环里顺手把监听信号写进这里，
+    //   由独立的 MonitorProvider + WasapiOut（默认设备）拉取。绝不影响 VB-Cable 的 10ms 低延迟。
+    private readonly RingBuffer _monitorBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 200 / 1000);
 
-    public float AppGain 
-    { 
-        get => _appGain; 
-        set 
-        { 
-            _appGain = value; 
-            _appGainSquared = value * value; 
-        } 
+    // 麦克风降噪：RNNoise（RNN 神经网络）实时人声降噪，仅作用于 Mic_Path。
+    // 在 FeedMic 中 Resample 到统一采样率（48000）立体声之后、写入 _micBuffer 之前原地处理。
+    // 关闭时为纯直通；原生库不可用时自动降级为直通。App_Path 永不经过。(Req 4.4/4.9)
+    private readonly RnnoiseDenoiser _denoiser = new();
+
+    // 麦克风静音（会话状态，不持久化）。仅在 Read() 的 mic 项上生效，App_Path 不受影响。(Req 2.6)
+    // volatile：UI/热键线程写入，音频播放线程读取，与现有增益缓存一致的无锁可见性。
+    private volatile bool _micMuted;
+
+    /// <summary>麦克风静音开关。Mic mute (session state, not persisted; mic path only). (Req 2.6)</summary>
+    public bool MicMuted
+    {
+        get => _micMuted;
+        set => _micMuted = value;
     }
-    public float MicGain 
-    { 
-        get => _micGain; 
-        set 
-        { 
-            _micGain = value; 
-            _micGainSquared = value * value; 
-        } 
+
+    // ── 本地监听（耳机回放）控制 ──
+    // _monitorEnabled：监听主开关。关闭时 Read() 不向 _monitorBuffer 写入（监听静音）。
+    // _monitorApp / _monitorMic：子开关。两者都关但主开关开 = 监听整个 VoicePipe 输出（App+Mic）。
+    // 全部 volatile：UI 线程写、音频线程读。
+    private volatile bool _monitorEnabled;
+    private volatile bool _monitorApp;
+    private volatile bool _monitorMic;
+
+    /// <summary>本地监听主开关：把混音送到耳机/默认设备。仅影响独立监听缓冲，不碰 VB-Cable 路径。</summary>
+    public bool MonitorEnabled
+    {
+        get => _monitorEnabled;
+        set
+        {
+            _monitorEnabled = value;
+            if (!value) _monitorBuffer.Clear(); // 关闭时清空，避免残留
+        }
+    }
+
+    /// <summary>子开关：单独监听 App 音频。</summary>
+    public bool MonitorApp
+    {
+        get => _monitorApp;
+        set => _monitorApp = value;
+    }
+
+    /// <summary>子开关：单独监听麦克风。</summary>
+    public bool MonitorMic
+    {
+        get => _monitorMic;
+        set => _monitorMic = value;
+    }
+
+    /// <summary>供监听输出端（MonitorProvider）拉取监听 PCM 的缓冲。</summary>
+    internal RingBuffer MonitorBuffer => _monitorBuffer;
+
+    /// <summary>降噪启用（透传到 RnnoiseDenoiser）。仅 Mic_Path。(Req 4.5/4.8)</summary>
+    public bool NoiseGateEnabled
+    {
+        get => _denoiser.Enabled;
+        set => _denoiser.Enabled = value;
+    }
+
+    /// <summary>原生 RNNoise 库是否可用（不可用时降噪开关无效，UI 可据此提示）。</summary>
+    public bool DenoiseAvailable => _denoiser.Available;
+
+    /// <summary>降噪强度（干湿混合比，0~1）。透传到 RnnoiseDenoiser，仅 Mic_Path。</summary>
+    public float DenoiseStrength
+    {
+        get => _denoiser.WetMix;
+        set => _denoiser.WetMix = value;
+    }
+
+    /// <summary>保留字段以兼容旧设置/UI 绑定；RNNoise 自动工作，不使用阈值。</summary>
+    public float NoiseGateThreshold { get; set; }
+
+    // AppGain / MicGain：感知响度（perceptual loudness）增益曲线。
+    //
+    // 人耳对响度的感知接近对数，纯线性幅度缩放手感很差（拉到 30% 听起来还有大半，
+    // 接近 0 才突然变小，最后一下掉到静音 = 悬崖感）。所以这里采用指数感知曲线：
+    //   实际幅度 = 滑块值 ^ GainExponent
+    // 让“滑块位置 ≈ 听到的响度百分比”，往下拉有线性、按比例变小的手感。
+    //
+    // 锚点保证：
+    //   0%   → 0      （静音）
+    //   100% → ×1.0   （严格等于原音，不增不减）
+    //   50%  → ×0.31  （听起来约一半响）
+    //   150% → ×1.98  （听起来约 1.5 倍响）
+    //
+    // 性能：曲线只在 setter（UI 改动增益时，极低频）里算一次 MathF.Pow 并缓存到
+    // _appGainAmp / _micGainAmp。音频播放线程的 Read() 只读缓存值，仍是单次乘法，零额外开销。
+    // volatile 确保播放线程始终读到 UI 线程写入的最新缓存值，防止 JIT 缓存旧值。
+    private const float GainExponent = 1.7f;
+
+    private float _appGain = 0.70f;
+    private float _micGain = 1.0f;
+    private volatile float _appGainAmp = MathF.Pow(0.70f, GainExponent);
+    private volatile float _micGainAmp = 1.0f; // 1.0^1.7 = 1.0
+
+    public float AppGain
+    {
+        get => _appGain;
+        set
+        {
+            _appGain = value;
+            _appGainAmp = MathF.Pow(value, GainExponent);
+        }
+    }
+    public float MicGain
+    {
+        get => _micGain;
+        set
+        {
+            _micGain = value;
+            _micGainAmp = MathF.Pow(value, GainExponent);
+        }
     }
 
     // 软限幅阈值放宽到 -0.5 dBFS (0.944)，只做极限防爆音，不压制正常动态
     private const float LimiterThreshold = 0.944f;
 
-    // IWaveProvider 输出格式：44100Hz / 2ch / Float32
-    public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(44100, 2);
+    // IWaveProvider 输出格式：48000Hz / 2ch / Float32（全管线统一采样率）
+    public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(AudioFormat.SampleRate, AudioFormat.Channels);
 
     // ★ 预分配缓冲区，避免 Read() 每次调用时堆分配
     private const int MaxSamplesPerRead = 4096;
     private readonly float[] _appTemp = new float[MaxSamplesPerRead];
     private readonly float[] _micTemp = new float[MaxSamplesPerRead];
+    private readonly float[] _monitorTemp = new float[MaxSamplesPerRead]; // 监听信号暂存（写入 _monitorBuffer）
 
     // ★ 重采样缓存缓冲区（FeedMic 在 WASAPI 回调线程单线程调用，无需加锁）
     private float[]? _resampleStereoCache;
@@ -62,11 +156,16 @@ public class AudioMixEngine : IWaveProvider
     // --- 输入端：由 WASAPI 回调线程调用，只往 RingBuffer 里写数据 ---
 
     public void FeedApp(float[] samples) => _appBuffer.Write(samples);
+    public void FeedApp(float[] samples, int count) => _appBuffer.Write(samples, 0, count);
 
-    public void FeedMic(float[] samples, WaveFormat srcFormat)
+    public void FeedMic(float[] samples, WaveFormat srcFormat) => FeedMic(samples, samples.Length, srcFormat);
+
+    public void FeedMic(float[] samples, int count, WaveFormat srcFormat)
     {
         // ★ Resample 返回缓存数组 + 有效长度，Write 用显式长度避免 ToArray()
-        var (buf, len) = Resample(samples, srcFormat);
+        var (buf, len) = Resample(samples, count, srcFormat);
+        // 降噪：仅 Mic_Path，重采样后、写入 _micBuffer 前原地处理（关闭/不可用时为直通）。(Req 4.4)
+        _denoiser.ProcessStereo48k(buf, len);
         _micBuffer.Write(buf, 0, len);
     }
 
@@ -94,23 +193,48 @@ public class AudioMixEngine : IWaveProvider
         _micBuffer.Read(micBuf, 0, samplesNeeded);
 
         // 混音 + 软限幅 + 内联波形分析 → 写入输出 buffer
-        float appGainSq = _appGainSquared;
-        float micGainSq = _micGainSquared;
+        // 感知响度曲线：用 setter 里预算好的缓存幅度值，循环内仍是单次乘法
+        float appGain = _appGainAmp;
+        float micGain = _micGainAmp;
 
-        for (int i = 0; i < samplesNeeded; i++)
+        // ── 本地监听信号计算参数（在 VB-Cable 主循环里顺手生成，不额外遍历）──
+        // 监听主开关开时：两个子开关都关 = 监听整个输出（App+Mic）；否则按子开关选择。
+        bool monitorOn = _monitorEnabled;
+        bool monApp, monMic;
+        if (!monitorOn) { monApp = false; monMic = false; }
+        else if (!_monitorApp && !_monitorMic) { monApp = true; monMic = true; } // 都关 = 监听整个 VoicePipe 输出
+        else { monApp = _monitorApp; monMic = _monitorMic; }
+        var monBuf = _monitorTemp;
+        bool writeMonitor = monitorOn && samplesNeeded <= MaxSamplesPerRead;
+
+        // ★ fixed 提到循环外，只 pin 一次（之前每个样本 pin 一次，代价很高）
+        unsafe
         {
-            float mixed = SoftLimit(appBuf[i] * appGainSq + micBuf[i] * micGainSq);
-            int pos = offset + i * 4;
-            // 直接写 float 的 4 字节到 byte[]
-            unsafe
+            fixed (byte* ptr = &buffer[offset])
             {
-                fixed (byte* ptr = &buffer[pos])
-                    *(float*)ptr = mixed;
-            }
+                float* fptr = (float*)ptr;
+                for (int i = 0; i < samplesNeeded; i++)
+                {
+                    float appComp = appBuf[i] * appGain;
+                    float micComp = _micMuted ? 0f : micBuf[i] * micGain;
 
-            // ★ 内联波形分析 — 不再调用 WaveformAnalyzer.Push()，消除锁 + 数组分配
-            WaveformAnalyzer.InlineSample(mixed);
+                    // VB-Cable 输出：App + Mic（与原逻辑完全一致，未改动）
+                    float mixed = SoftLimit(appComp + micComp);
+                    fptr[i] = mixed;
+
+                    // ★ 内联波形分析 — 不再调用 WaveformAnalyzer.Push()，消除锁 + 数组分配
+                    WaveformAnalyzer.InlineSample(mixed);
+
+                    // 本地监听信号：按子开关选择 App/Mic 分量（独立于 VB-Cable 输出）
+                    if (writeMonitor)
+                        monBuf[i] = SoftLimit((monApp ? appComp : 0f) + (monMic ? micComp : 0f));
+                }
+            }
         }
+
+        // 把监听信号写入独立缓冲，供 MonitorProvider 拉取（不影响上面的 VB-Cable 输出）
+        if (writeMonitor)
+            _monitorBuffer.Write(monBuf, 0, samplesNeeded);
 
         return count; // 永远返回请求的字节数，保证输出流连续
     }
@@ -129,16 +253,16 @@ public class AudioMixEngine : IWaveProvider
     /// <summary>
     /// 重采样并返回 (缓存数组, 有效样本数)，调用方用显式长度写 RingBuffer，避免 ToArray()。
     /// </summary>
-    private (float[] buf, int len) Resample(float[] input, WaveFormat srcFmt)
+    private (float[] buf, int len) Resample(float[] input, int inputLen, WaveFormat srcFmt)
     {
         int channels = srcFmt.Channels;
         float[] workBuf = input;
-        int workLen = input.Length;
+        int workLen = inputLen;
 
         // 多声道 → 立体声下混
         if (channels > 2)
         {
-            int frames = input.Length / channels;
+            int frames = inputLen / channels;
             int stereoLen = frames * 2;
             if (_resampleStereoCache == null || _resampleStereoCache.Length < stereoLen)
                 _resampleStereoCache = new float[stereoLen];
@@ -159,11 +283,11 @@ public class AudioMixEngine : IWaveProvider
         // 单声道 → 立体声
         else if (channels == 1)
         {
-            int stereoLen = input.Length * 2;
+            int stereoLen = inputLen * 2;
             // ★ 缓存单声道→立体声缓冲区
             if (_monoStereoCache == null || _monoStereoCache.Length < stereoLen)
                 _monoStereoCache = new float[stereoLen];
-            for (int i = 0; i < input.Length; i++)
+            for (int i = 0; i < inputLen; i++)
             {
                 _monoStereoCache[i * 2]     = input[i];
                 _monoStereoCache[i * 2 + 1] = input[i];
@@ -173,9 +297,9 @@ public class AudioMixEngine : IWaveProvider
             channels = 2;
         }
 
-        // 采样率转换（如 48000Hz → 44100Hz）
-        if (srcFmt.SampleRate != 44100)
-            return ResampleRate(workBuf, workLen, srcFmt.SampleRate, 44100, channels);
+        // 采样率转换（如 44100Hz → 48000Hz）：仅当设备采样率与管线不一致时才转
+        if (srcFmt.SampleRate != AudioFormat.SampleRate)
+            return ResampleRate(workBuf, workLen, srcFmt.SampleRate, AudioFormat.SampleRate, channels);
 
         return (workBuf, workLen);
     }
@@ -235,5 +359,13 @@ public class AudioMixEngine : IWaveProvider
     {
         _appBuffer.Clear();
         _micBuffer.Clear();
+        _monitorBuffer.Clear(); // ★ 清监听缓冲，切换/重启时避免残留
+        _denoiser.Reset(); // ★ 清降噪器跨调用残留（切换麦克风/重启时），避免杂音/相位跳变 (B2)
+    }
+
+    /// <summary>释放降噪器持有的 RNNoise 原生状态（rnnoise_destroy）。应用退出时由管线调用。(B1)</summary>
+    public void Dispose()
+    {
+        _denoiser.Dispose();
     }
 }

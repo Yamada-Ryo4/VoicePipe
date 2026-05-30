@@ -69,3 +69,27 @@ public class PeakToWidthConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotImplementedException();
 }
+
+/// <summary>
+/// float 峰值 → 笔刷：达到/超过 0.99（接近满刻度）时返回主题 ClipBrush（红），
+/// 否则返回主题 AccentBrush（正常）。两个笔刷均从当前主题资源解析，
+/// 未找到时回退到硬编码的红 / 绿，保证削波始终可见。
+/// </summary>
+public class PeakToClipBrushConverter : IValueConverter
+{
+    public static readonly PeakToClipBrushConverter Instance = new();
+
+    private static readonly Brush FallbackClip = new SolidColorBrush(Color.FromRgb(0xE0, 0x00, 0x00));   // 红
+    private static readonly Brush FallbackNormal = new SolidColorBrush(Color.FromRgb(0x34, 0xD3, 0x99)); // 绿
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        bool clipping = value is float f && f >= 0.99f;
+        string key = clipping ? "ClipBrush" : "AccentBrush";
+        Brush fallback = clipping ? FallbackClip : FallbackNormal;
+        return (Application.Current?.TryFindResource(key) as Brush) ?? fallback;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}

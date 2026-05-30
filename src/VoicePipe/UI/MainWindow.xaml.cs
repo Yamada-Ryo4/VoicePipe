@@ -1,5 +1,9 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media.Animation;
+using Hardcodet.Wpf.TaskbarNotification;
+using VoicePipe.Services;
 
 namespace VoicePipe.UI;
 
@@ -9,15 +13,30 @@ public partial class MainWindow : Window
     private string _currentLang = "zh-CN";
 
     private ResourceDictionary? _themeDict;
-    private ResourceDictionary? _langDict;
+    private ResourceDictionary? _langDict;      // active language, merged ON TOP (wins lookup)
+    private ResourceDictionary? _langBaseDict;  // en-US fallback BASE, kept beneath the active language
     private LogConsoleWindow?   _consoleWindow;
+
+    private const string FallbackLang = "en-US";
+
+    // ── 全局热键 + 自启服务 ──
+    private readonly HotkeyManager _hotkeys = new();
+    private readonly AutoStartService _autoStart = new();
+    private bool _realExit; // 托盘"退出"或 MinimizeToTray=false 时为 true，允许真正关闭
 
     public MainWindow()
     {
         InitializeComponent();
 
-        var settings = Core.AppSettings.Load();
+        var settings = Core.AppSettings.Current;
+        _isDark = settings.IsDarkTheme; // ★ 恢复上次的主题选择
         SetLanguage(settings.Language);
+
+        // 同步主题图标/文字
+        ThemeIcon.Text = _isDark ? "🌙" : "☀";
+        string darkLbl = Application.Current.TryFindResource("StrThemeDark") as string ?? "Dark";
+        string lightLbl = Application.Current.TryFindResource("StrThemeLight") as string ?? "Light";
+        ThemeLabel.Text = " " + (_isDark ? darkLbl : lightLbl);
 
         foreach (ComboBoxItem item in LangSelector.Items)
         {
@@ -27,20 +46,165 @@ public partial class MainWindow : Window
                 break;
             }
         }
+
+        // ★ 窗口聚焦/失焦时切换可视化刷新率（挂后台时降帧省 CPU，波形仍在动）
+        Activated   += (_, _) => (DataContext as ViewModels.MainViewModel)?.SetWindowFocused(true);
+        Deactivated += (_, _) => (DataContext as ViewModels.MainViewModel)?.SetWindowFocused(false);
+
+        // ★ 窗口句柄就绪后初始化全局热键并注册保存的绑定；同时对账开机自启状态
+        SourceInitialized += OnSourceInitialized;
     }
 
-    protected override void OnClosed(EventArgs e)
+    private void OnSourceInitialized(object? sender, EventArgs e)
     {
-        base.OnClosed(e);
-        _consoleWindow?.Close();
-        if (DataContext is ViewModels.MainViewModel vm)
-            vm.Cleanup(); // 完全清理管线（包括保持运行的 LoopbackCapturer）
+        var settings = Core.AppSettings.Current;
+
+        // 托盘图标：从 exe 已嵌入的图标提取（GDI+，宽容），避免 WPF 严格解码器拒绝 .ico 导致崩溃。
+        // try-catch 兜底：即使失败也只是托盘无图标，绝不影响启动。
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(exePath))
+                TrayIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "托盘图标加载失败，使用默认");
+        }
+
+        // 初始化热键管理器（挂到本窗口的消息泵）
+        var hwnd = new WindowInteropHelper(this).Handle;
+        _hotkeys.Initialize(hwnd);
+        _hotkeys.HotkeyPressed += OnHotkeyPressed;
+        _hotkeys.Register(HotkeyManager.Action.ToggleMute, settings.MuteHotkey);
+        _hotkeys.Register(HotkeyManager.Action.TogglePipeline, settings.PipelineHotkey);
+
+        // 注入设置服务到 ViewModel（内嵌设置面板用）
+        (DataContext as ViewModels.MainViewModel)?.InitSettings(_hotkeys, _autoStart);
+
+        // 对账开机自启：以注册表实际状态为准回写持久化意图
+        try { settings.AutoStartBoot = _autoStart.IsEnabled(); } catch { }
     }
+
+    private void OnHotkeyPressed(object? sender, HotkeyManager.Action action)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm) return;
+        Serilog.Log.Information("全局热键触发: {Action}", action);
+        switch (action)
+        {
+            case HotkeyManager.Action.ToggleMute: vm.ToggleMicMute(); break;
+            case HotkeyManager.Action.TogglePipeline: vm.TogglePipeline(); break;
+        }
+    }
+
+    /// <summary>
+    /// 关闭请求：MinimizeToTray=true 时缩到托盘（取消关闭、隐藏窗口、管线继续运行）；
+    /// 否则执行完整清理并退出。托盘"退出"会先置 _realExit=true 再关闭。(Req 3.1, 3.5, 3.6)
+    /// </summary>
+    private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_realExit && Core.AppSettings.Current.MinimizeToTray)
+        {
+            e.Cancel = true;
+            Hide();
+            Serilog.Log.Information("窗口关闭→最小化到托盘（管线继续运行）");
+            return;
+        }
+
+        // 完整清理：注销热键、清理管线、释放托盘
+        Serilog.Log.Information("应用退出，开始清理");
+        try { _hotkeys.HotkeyPressed -= OnHotkeyPressed; _hotkeys.Dispose(); } catch { }
+        if (DataContext is ViewModels.MainViewModel vm)
+        {
+            try { vm.Cleanup(); } catch { }
+        }
+        _consoleWindow?.Close();
+        try { TrayIcon?.Dispose(); } catch { }
+
+        // OnExplicitShutdown 下需要显式退出
+        Application.Current.Shutdown();
+    }
+
+    // ── 系统托盘：还原 / 退出 ──
+    private void Tray_Restore(object sender, RoutedEventArgs e)
+    {
+        Serilog.Log.Information("托盘：还原窗口");
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private void Tray_Exit(object sender, RoutedEventArgs e)
+    {
+        Serilog.Log.Information("托盘：退出");
+        _realExit = true;
+        Close();
+    }
+
+    // ── 热键重置：把两个热键都清为"未设置"（None），并注销已注册的全局热键 ──
+    private void ResetHotkeys_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm) return;
+        vm.ResetHotkeys();
+        Serilog.Log.Information("热键已重置为未设置");
+    }
+
+    // ── 设置面板切换（主页面内嵌视图 + 滑动淡入淡出动画）──
+    private void ToggleSettings_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm) return;
+        vm.ShowSettings = !vm.ShowSettings;
+        Serilog.Log.Information("设置面板: {State}", vm.ShowSettings ? "打开" : "关闭");
+        AnimateSettings(vm.ShowSettings);
+    }
+
+    /// <summary>
+    /// 设置页切入/切出动画（前进/后退镜像，符合直觉）：
+    /// 进入设置（前进）：设置页从右侧滑入+淡入，主内容向左滑出+淡出；
+    /// 返回（后退）：主内容从左侧滑入+淡入，设置页向右滑出+淡出（与进入完全镜像）。
+    /// </summary>
+    private void AnimateSettings(bool showSettings)
+    {
+        var dur = new Duration(TimeSpan.FromMilliseconds(220));
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        const double slide = 40;
+
+        // ★ 方向随前进/后退镜像：
+        //   前进(进设置): 新页从右(+slide)进，旧页向左(-slide)出
+        //   后退(返回):   新页从左(-slide)进，旧页向右(+slide)出
+        double inFrom = showSettings ? slide : -slide;
+        double outTo  = showSettings ? -slide : slide;
+
+        View incoming = showSettings
+            ? new View(SettingsView, SettingsTransform)
+            : new View(MainContentView, MainContentTransform);
+        View outgoing = showSettings
+            ? new View(MainContentView, MainContentTransform)
+            : new View(SettingsView, SettingsTransform);
+
+        // 进入视图：从 inFrom 滑到 0，透明度 0→1
+        incoming.Element.Visibility = Visibility.Visible;
+        incoming.Transform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty,
+            new DoubleAnimation(inFrom, 0, dur) { EasingFunction = ease });
+        incoming.Element.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
+
+        // 退出视图：滑到 outTo，透明度 1→0，动画结束后隐藏
+        outgoing.Transform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty,
+            new DoubleAnimation(0, outTo, dur) { EasingFunction = ease });
+        var fadeOut = new DoubleAnimation(1, 0, dur) { EasingFunction = ease };
+        var hideTarget = outgoing.Element;
+        fadeOut.Completed += (_, _) => { if (hideTarget.Opacity == 0) hideTarget.Visibility = Visibility.Collapsed; };
+        outgoing.Element.BeginAnimation(OpacityProperty, fadeOut);
+    }
+
+    private readonly record struct View(FrameworkElement Element, System.Windows.Media.TranslateTransform Transform);
 
     private void OpenConsole_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         if (_consoleWindow == null || !_consoleWindow.IsLoaded)
         {
+            Serilog.Log.Information("打开实时日志控制台");
             _consoleWindow = new LogConsoleWindow();
             _consoleWindow.Show();
         }
@@ -61,6 +225,12 @@ public partial class MainWindow : Window
         string dark = Application.Current.TryFindResource("StrThemeDark") as string ?? "Dark";
         string light = Application.Current.TryFindResource("StrThemeLight") as string ?? "Light";
         ThemeLabel.Text = " " + (_isDark ? dark : light);
+
+        // ★ 持久化主题选择（共享单例，不会覆盖其他字段）
+        var settings = Core.AppSettings.Current;
+        settings.IsDarkTheme = _isDark;
+        settings.Save();
+        Serilog.Log.Information("主题切换: {Theme}", _isDark ? "暗色" : "亮色");
     }
 
     private void Language_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -71,9 +241,10 @@ public partial class MainWindow : Window
             if (newLang != _currentLang)
             {
                 SetLanguage(newLang);
-                var settings = Core.AppSettings.Load();
+                var settings = Core.AppSettings.Current;
                 settings.Language = newLang;
                 settings.Save();
+                Serilog.Log.Information("语言切换: {Lang}", newLang);
 
                 // Update theme button label after lang change
                 string dark = Application.Current.TryFindResource("StrThemeDark") as string ?? "Dark";
@@ -98,16 +269,32 @@ public partial class MainWindow : Window
             Source = new Uri(_isDark ? "Themes/Dark.xaml" : "Themes/Light.xaml", UriKind.Relative)
         };
 
-        var newLang = new ResourceDictionary
-        {
-            Source = new Uri($"Langs/{_currentLang}.xaml", UriKind.Relative)
-        };
-
         if (_themeDict != null && merged.Contains(_themeDict))
             merged[merged.IndexOf(_themeDict)] = newTheme;
         else
             merged.Add(newTheme);
         _themeDict = newTheme;
+
+        // en-US fallback BASE: always merged beneath the active language so any key missing
+        // from the active language resolves to en-US. WPF searches merged dictionaries in
+        // reverse order, so this base must remain BEFORE (beneath) the active-language dict.
+        if (_langBaseDict == null || !merged.Contains(_langBaseDict))
+        {
+            var baseLang = new ResourceDictionary
+            {
+                Source = new Uri($"Langs/{FallbackLang}.xaml", UriKind.Relative)
+            };
+            merged.Add(baseLang);
+            _langBaseDict = baseLang;
+        }
+
+        // Active language, merged ON TOP of the fallback base so its keys win the lookup.
+        // When the active language IS en-US, the base already provides every key; we still
+        // merge it on top so the resolution order is uniform and switching back works.
+        var newLang = new ResourceDictionary
+        {
+            Source = new Uri($"Langs/{_currentLang}.xaml", UriKind.Relative)
+        };
 
         if (_langDict != null && merged.Contains(_langDict))
             merged[merged.IndexOf(_langDict)] = newLang;
@@ -124,5 +311,18 @@ public partial class MainWindow : Window
             UseShellExecute = true
         });
         e.Handled = true;
+    }
+
+    // ── 麦克风下拉菜单打开/关闭：控制 PeakMonitor 是否临时监听全部麦克风 ──
+    private void MicCombo_DropDownOpened(object sender, EventArgs e)
+    {
+        if (DataContext is ViewModels.MainViewModel vm)
+            vm.OnMicDropDownOpened();
+    }
+
+    private void MicCombo_DropDownClosed(object sender, EventArgs e)
+    {
+        if (DataContext is ViewModels.MainViewModel vm)
+            vm.OnMicDropDownClosed();
     }
 }

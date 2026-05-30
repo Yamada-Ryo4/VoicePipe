@@ -14,9 +14,14 @@ public class MicCapturer : IDisposable
     private WasapiCapture? _capture;
     private MMDevice? _device;
     private bool _disposed;
+    private readonly object _sync = new(); // ★ 保护 _capture/_device，防止后台初始化与 Stop 并发竞态 (B3)
 
-    public event EventHandler<(float[] Samples, WaveFormat Format)>? SamplesAvailable;
+    public event EventHandler<(float[] Samples, int Count, WaveFormat Format)>? SamplesAvailable;
     public WaveFormat? OutputFormat => _capture?.WaveFormat;
+
+    // ★ 复用的转换缓冲区，避免每次 DataAvailable 回调都 new float[]。
+    // 安全性：消费链同步（FeedMic → Resample → RingBuffer.Write 立即拷走），回调返回前数据已被复制。
+    private float[] _convertBuffer = new float[8192];
 
     /// <summary>在后台线程上初始化并启动 WASAPI 捕获，避免阻塞 UI 线程。</summary>
     public void Start(string deviceId)
@@ -28,29 +33,34 @@ public class MicCapturer : IDisposable
         {
             try
             {
-                using var enumerator = new MMDeviceEnumerator();
-                _device = enumerator.GetDevice(deviceId);
-
-                _capture = new WasapiCapture(_device)
+                lock (_sync)
                 {
-                    ShareMode = AudioClientShareMode.Shared,
-                };
+                    if (_disposed) return; // 已释放则不再初始化
 
-                _capture.DataAvailable += OnDataAvailable;
-                _capture.RecordingStopped += (_, e) =>
-                {
-                    if (e.Exception != null)
-                        Serilog.Log.Error(e.Exception, "MicCapturer: 录音停止异常");
-                    else
-                        Serilog.Log.Information("MicCapturer: 停止");
-                };
-                _capture.StartRecording();
-                Serilog.Log.Information("MicCapturer: 开始捕获 {Id} 格式={Rate}Hz/{Ch}ch/{Bits}bit {Enc}",
-                    deviceId,
-                    _capture.WaveFormat.SampleRate,
-                    _capture.WaveFormat.Channels,
-                    _capture.WaveFormat.BitsPerSample,
-                    _capture.WaveFormat.Encoding);
+                    using var enumerator = new MMDeviceEnumerator();
+                    _device = enumerator.GetDevice(deviceId);
+
+                    _capture = new WasapiCapture(_device)
+                    {
+                        ShareMode = AudioClientShareMode.Shared,
+                    };
+
+                    _capture.DataAvailable += OnDataAvailable;
+                    _capture.RecordingStopped += (_, e) =>
+                    {
+                        if (e.Exception != null)
+                            Serilog.Log.Error(e.Exception, "MicCapturer: 录音停止异常");
+                        else
+                            Serilog.Log.Information("MicCapturer: 停止");
+                    };
+                    _capture.StartRecording();
+                    Serilog.Log.Information("MicCapturer: 开始捕获 {Id} 格式={Rate}Hz/{Ch}ch/{Bits}bit {Enc}",
+                        deviceId,
+                        _capture.WaveFormat.SampleRate,
+                        _capture.WaveFormat.Channels,
+                        _capture.WaveFormat.BitsPerSample,
+                        _capture.WaveFormat.Encoding);
+                }
             }
             catch (Exception ex)
             {
@@ -62,25 +72,33 @@ public class MicCapturer : IDisposable
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (e.BytesRecorded == 0 || _capture == null) return;
-        var fmt = _capture.WaveFormat;
-        var samples = ConvertToFloat32(e.Buffer, e.BytesRecorded, fmt);
-        SamplesAvailable?.Invoke(this, (samples, fmt));
+        // ★ 用 sender（触发事件的 WasapiCapture 实例）而非字段 _capture：
+        //   避免与并发 Stop()（置 _capture=null）产生空引用竞态。
+        if (e.BytesRecorded == 0 || sender is not WasapiCapture capture) return;
+        var fmt = capture.WaveFormat;
+        int count = ConvertToFloat32(e.Buffer, e.BytesRecorded, fmt);
+        if (count > 0)
+            SamplesAvailable?.Invoke(this, (_convertBuffer, count, fmt));
     }
 
-    private static float[] ConvertToFloat32(byte[] buffer, int bytesRecorded, WaveFormat fmt)
+    /// <summary>
+    /// 将 PCM 字节转换为 float32，写入复用缓冲 _convertBuffer，返回有效样本数。
+    /// </summary>
+    private int ConvertToFloat32(byte[] buffer, int bytesRecorded, WaveFormat fmt)
     {
         if (fmt.Encoding == WaveFormatEncoding.IeeeFloat)
         {
-            var floats = new float[bytesRecorded / 4];
-            Buffer.BlockCopy(buffer, 0, floats, 0, bytesRecorded);
-            return floats;
+            int sampleCount = bytesRecorded / 4;
+            if (_convertBuffer.Length < sampleCount) _convertBuffer = new float[sampleCount];
+            Buffer.BlockCopy(buffer, 0, _convertBuffer, 0, bytesRecorded);
+            return sampleCount;
         }
         else
         {
             int bytesPerSample = fmt.BitsPerSample / 8;
             int sampleCount = bytesRecorded / bytesPerSample;
-            var floats = new float[sampleCount];
+            if (_convertBuffer.Length < sampleCount) _convertBuffer = new float[sampleCount];
+            var floats = _convertBuffer;
 
             switch (fmt.BitsPerSample)
             {
@@ -103,30 +121,74 @@ public class MicCapturer : IDisposable
                     break;
                 default:
                     Serilog.Log.Warning("MicCapturer: 不支持的位深度 {Bits}", fmt.BitsPerSample);
-                    break;
+                    return 0;
             }
-            return floats;
+            return sampleCount;
         }
     }
 
     public void Stop()
     {
-        if (_capture != null)
+        lock (_sync)
         {
-            try
+            if (_capture != null)
             {
-                _capture.StopRecording();
-                _capture.DataAvailable -= OnDataAvailable;
-                _capture.Dispose();
+                try
+                {
+                    _capture.StopRecording();
+                    _capture.DataAvailable -= OnDataAvailable;
+                    _capture.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Warning(ex, "MicCapturer: 停止时异常");
+                }
+                _capture = null;
             }
-            catch (Exception ex)
-            {
-                Serilog.Log.Warning(ex, "MicCapturer: 停止时异常");
-            }
-            _capture = null;
+            _device?.Dispose();
+            _device = null;
         }
-        _device?.Dispose();
-        _device = null;
+    }
+
+    // VB-Audio 虚拟线的录音端（CABLE Output 等）必须从麦克风列表排除：
+    // 它是 VoicePipe 输出目标 CABLE Input 的另一端，选它当麦克风会形成
+    // 混音→CABLE Input→CABLE Output→采集→再混音 的反馈环路，声音指数级冲到满刻度（嗡嗡/嘟嘟）。
+    private static readonly string[] LoopbackMarkers =
+    {
+        "CABLE Output",   // VB-Cable 主线录音端
+        "CABLE-A Output", // VB-Cable A+B
+        "CABLE-B Output",
+        "VB-Audio",       // VB-Audio 系列虚拟设备统称
+        "VoiceMeeter Out",// VoiceMeeter 虚拟输出端
+        "VoiceMeeter Aux Out",
+    };
+
+    private static bool IsLoopbackCaptureDevice(string friendlyName)
+    {
+        foreach (var m in LoopbackMarkers)
+            if (friendlyName.Contains(m, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 按设备 ID 判断是否为虚拟回环录音端（CABLE Output 等）。
+    /// 供管线启动前兜底校验：即使设置里残留了回环设备 ID，也拒绝启动以防反馈环路。
+    /// 解析失败（设备不存在）时返回 false（让正常流程处理"找不到设备"）。
+    /// </summary>
+    public static bool IsLoopbackDeviceId(string deviceId)
+    {
+        if (string.IsNullOrEmpty(deviceId)) return false;
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            using var dev = enumerator.GetDevice(deviceId);
+            return dev != null && IsLoopbackCaptureDevice(dev.FriendlyName);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static List<MicInfo> GetAvailableMics()
@@ -139,6 +201,12 @@ public class MicCapturer : IDisposable
             for (int i = 0; i < col.Count; i++)
             {
                 using var dev = col[i];
+                // ★ 过滤虚拟回环录音端，防止反馈环路（嗡嗡/嘟嘟声）
+                if (IsLoopbackCaptureDevice(dev.FriendlyName))
+                {
+                    Serilog.Log.Information("MicCapturer: 已排除虚拟回环设备 {Name}（防反馈环路）", dev.FriendlyName);
+                    continue;
+                }
                 result.Add(new MicInfo(dev.ID, dev.FriendlyName));
             }
         }
@@ -151,6 +219,11 @@ public class MicCapturer : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed) { Stop(); _disposed = true; }
+        lock (_sync)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
+        Stop();
     }
 }
