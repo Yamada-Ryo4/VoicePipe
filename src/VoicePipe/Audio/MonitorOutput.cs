@@ -62,6 +62,27 @@ public sealed class MonitorOutput : IDisposable
         lock (_sync) StartLocked();
     }
 
+    /// <summary>
+    /// 幂等启动：已在运行（且当前设备匹配 _targetDeviceId）就什么都不做，不重启 WasapiOut。
+    /// 用于 PipelineManager.StartAsync — 启动新管线时如果监听已经在跑，就别拆掉重建（多余的 50ms+ 抖动）。
+    /// </summary>
+    public void EnsureStarted()
+    {
+        lock (_sync)
+        {
+            if (_out != null && _device != null)
+            {
+                // 已在跑：仅当目标设备和当前设备不匹配时才重启。
+                bool defaultRequested = string.IsNullOrEmpty(_targetDeviceId);
+                bool currentMatches = defaultRequested
+                    ? true   // 跟默认 — 假设默认没变（设备切换由 TargetDeviceId setter 处理）
+                    : _device.ID == _targetDeviceId;
+                if (currentMatches) return; // ★ 复用：直接走人，零开销
+            }
+            StartLocked();
+        }
+    }
+
     // 必须在持有 _sync 锁的前提下调用。
     private void StartLocked()
     {
@@ -158,7 +179,8 @@ public sealed class MonitorOutput : IDisposable
     private sealed class MonitorProvider : IWaveProvider
     {
         private readonly AudioMixEngine _engine;
-        private float[] _temp = new float[4096];
+        // 50ms latency × 48kHz × 2ch = 4800 样本，预分配 6000 留足余量避免首次 Read 扩容
+        private float[] _temp = new float[6000];
 
         public MonitorProvider(AudioMixEngine engine) => _engine = engine;
 

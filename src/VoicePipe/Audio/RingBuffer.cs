@@ -90,6 +90,8 @@ public class RingBuffer
 
     /// <summary>
     /// 兼容旧 API：分配新数组返回（仅用于不频繁的调用路径）。
+    /// ⚠ 注意：返回数组长度可能小于参数 count（实际可读量不足时只返回可读部分）。
+    /// 高频路径请用 <see cref="Read(float[], int, int)"/> 重载，零分配且明确返回读取数。
     /// </summary>
     public float[] Read(int count)
     {

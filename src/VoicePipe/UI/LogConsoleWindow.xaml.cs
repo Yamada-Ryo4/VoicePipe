@@ -42,8 +42,9 @@ public partial class LogConsoleWindow : Window
 
     private void OnLogEmitted(string text, LogEventLevel level)
     {
-        // 从任意线程调用，必须派发到 UI 线程
-        Dispatcher.InvokeAsync(() => AppendLine(text));
+        // 从任意线程调用，必须派发到 UI 线程。
+        // try-catch：窗口关闭瞬间可能 Dispatcher 已 shut down，吞掉避免上传到音频线程
+        try { Dispatcher.InvokeAsync(() => AppendLine(text)); } catch { }
     }
 
     private void AppendLine(string text)

@@ -242,7 +242,7 @@ public class LoopbackCapturer : IDisposable
         finally
         {
             // ★ 必须按正确顺序释放所有 COM 对象，否则 Windows 认为旧会话仍活着
-            // 顺序：Stop → 释放 CaptureClient → 释放 AudioClient → 关闭事件 → CoUninitialize
+            // 顺序：Stop → 释放 CaptureClient → 释放 AudioClient → 关闭事件
             if (started)
             {
                 try { audioClient?.Stop(); } catch { }
@@ -368,13 +368,8 @@ public class LoopbackCapturer : IDisposable
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr hObject);
 
-    [DllImport("ole32.dll")]
-    private static extern int CoInitializeEx(IntPtr pvReserved, uint dwCoInit);
-
-    [DllImport("ole32.dll")]
-    private static extern void CoUninitialize();
-
-    private const uint COINIT_MULTITHREADED = 0x0;
+    // 注：早期实现曾考虑显式 CoInitializeEx/CoUninitialize，但 .NET 对后台线程的 MTA COM 调用
+    // 已自动处理，这里不再需要显式调用。原 P/Invoke 声明已移除。
 
     // ────────────────────────────────────────────────────────
     // 原生结构体和接口

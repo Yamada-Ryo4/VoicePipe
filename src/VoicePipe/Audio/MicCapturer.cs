@@ -16,6 +16,12 @@ public class MicCapturer : IDisposable
     private bool _disposed;
     private readonly object _sync = new(); // ★ 保护 _capture/_device，防止后台初始化与 Stop 并发竞态 (B3)
 
+    // ★ 当前正在捕获的设备 ID（启动后由后台线程赋值，主线程读）。
+    // PipelineManager 据此判断启动新管线时是否还在采同一个麦克风，能否跳过整次拆建。
+    private volatile string? _currentDeviceId;
+    public string? CurrentDeviceId => _currentDeviceId;
+    public bool IsAlive => _capture != null && !_disposed;
+
     public event EventHandler<(float[] Samples, int Count, WaveFormat Format)>? SamplesAvailable;
     public WaveFormat? OutputFormat => _capture?.WaveFormat;
 
@@ -54,6 +60,7 @@ public class MicCapturer : IDisposable
                             Serilog.Log.Information("MicCapturer: 停止");
                     };
                     _capture.StartRecording();
+                    _currentDeviceId = deviceId; // ★ 记录设备 ID 供复用判断
                     Serilog.Log.Information("MicCapturer: 开始捕获 {Id} 格式={Rate}Hz/{Ch}ch/{Bits}bit {Enc}",
                         deviceId,
                         _capture.WaveFormat.SampleRate,
@@ -147,6 +154,7 @@ public class MicCapturer : IDisposable
             }
             _device?.Dispose();
             _device = null;
+            _currentDeviceId = null;
         }
     }
 
