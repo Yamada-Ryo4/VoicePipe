@@ -15,6 +15,7 @@
     <sys:String x:Key="StrWaveformPreview">波形預覽</sys:String>
     <sys:String x:Key="StrStop">停止</sys:String>
     <sys:String x:Key="StrMicPassthrough">停止後保留麥克風直通</sys:String>
+    <sys:String x:Key="StrMicPassthroughTooltip">勾選後,按「停止」只斷開 App 音訊混入,麥克風繼續直通到虛擬麥克風(對方仍能聽到你說話)。不影響延遲。取消勾選則按停止時完全停掉管線。</sys:String>
     <sys:String x:Key="StrStartMixing">開始混音</sys:String>
     <sys:String x:Key="StrPid">PID:</sys:String>
     <sys:String x:Key="StrThemeDark">深色</sys:String>
@@ -34,6 +35,7 @@
     <sys:String x:Key="StrTrayShow">顯示 VoicePipe</sys:String>
     <sys:String x:Key="StrTrayExit">結束</sys:String>
     <sys:String x:Key="StrNoiseGate">降噪</sys:String>
+    <sys:String x:Key="StrNoiseGateTooltip">基於 RNNoise 神經網路的即時人聲降噪,僅作用於麥克風路徑,不影響 App 音訊。強度滑桿控制乾濕混合(0=純原聲,1=最徹底去噪)。降噪在錄音執行緒內聯處理,延遲基本不變。</sys:String>
     <sys:String x:Key="StrNoiseGateEnable">啟用降噪（僅麥克風）</sys:String>
     <sys:String x:Key="StrNoiseGateThreshold">閾值</sys:String>
     <sys:String x:Key="StrDenoiseStrength">強度</sys:String>

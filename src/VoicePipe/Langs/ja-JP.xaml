@@ -15,6 +15,7 @@
     <sys:String x:Key="StrWaveformPreview">波形プレビュー</sys:String>
     <sys:String x:Key="StrStop">停止</sys:String>
     <sys:String x:Key="StrMicPassthrough">停止後もマイクを転送し続ける</sys:String>
+    <sys:String x:Key="StrMicPassthroughTooltip">オンにすると「停止」を押した際にアプリ音声のミックスのみを切断し、マイクは仮想マイクへ流し続けます(相手にはあなたの声が届き続けます)。遅延への影響はありません。オフの場合は「停止」でパイプライン全体を完全に停止します。</sys:String>
     <sys:String x:Key="StrStartMixing">ミックス開始</sys:String>
     <sys:String x:Key="StrPid">PID:</sys:String>
     <sys:String x:Key="StrThemeDark">ダーク</sys:String>
@@ -34,6 +35,7 @@
     <sys:String x:Key="StrTrayShow">VoicePipe を表示</sys:String>
     <sys:String x:Key="StrTrayExit">終了</sys:String>
     <sys:String x:Key="StrNoiseGate">ノイズ低減</sys:String>
+    <sys:String x:Key="StrNoiseGateTooltip">RNNoise ニューラルネットワークによるリアルタイム人声ノイズ低減。マイク経路のみ作用し、アプリ音声には影響しません。強度スライダーでドライ/ウェットを混合(0=原音そのまま、1=最大抑制)。録音スレッド内インライン処理のため遅延への影響はほぼなし。</sys:String>
     <sys:String x:Key="StrNoiseGateEnable">ノイズ低減を有効化（マイクのみ）</sys:String>
     <sys:String x:Key="StrNoiseGateThreshold">しきい値</sys:String>
     <sys:String x:Key="StrDenoiseStrength">強度</sys:String>

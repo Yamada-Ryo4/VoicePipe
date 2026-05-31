@@ -15,6 +15,7 @@
     <sys:String x:Key="StrWaveformPreview">파형 미리보기</sys:String>
     <sys:String x:Key="StrStop">정지</sys:String>
     <sys:String x:Key="StrMicPassthrough">중지 후 마이크 패스스루 유지</sys:String>
+    <sys:String x:Key="StrMicPassthroughTooltip">체크하면 "정지" 버튼을 눌러도 앱 오디오 믹스만 끊고 마이크는 가상 마이크로 계속 전달됩니다(상대방은 여전히 당신의 목소리를 들을 수 있습니다). 지연에 영향 없음. 체크 해제 시 정지하면 파이프라인 전체가 완전히 멈춥니다.</sys:String>
     <sys:String x:Key="StrStartMixing">믹싱 시작</sys:String>
     <sys:String x:Key="StrPid">PID:</sys:String>
     <sys:String x:Key="StrThemeDark">다크</sys:String>
@@ -34,6 +35,7 @@
     <sys:String x:Key="StrTrayShow">VoicePipe 표시</sys:String>
     <sys:String x:Key="StrTrayExit">종료</sys:String>
     <sys:String x:Key="StrNoiseGate">노이즈 제거</sys:String>
+    <sys:String x:Key="StrNoiseGateTooltip">RNNoise 신경망 기반 실시간 음성 노이즈 제거. 마이크 경로에만 작용하며 앱 오디오에는 영향이 없습니다. 강도 슬라이더는 드라이/웻 믹스를 조절합니다(0=원음 그대로, 1=최대 억제). 녹음 스레드 내 인라인 처리로 지연에 영향이 거의 없습니다.</sys:String>
     <sys:String x:Key="StrNoiseGateEnable">노이즈 제거 활성화 (마이크 전용)</sys:String>
     <sys:String x:Key="StrNoiseGateThreshold">임계값</sys:String>
     <sys:String x:Key="StrDenoiseStrength">강도</sys:String>

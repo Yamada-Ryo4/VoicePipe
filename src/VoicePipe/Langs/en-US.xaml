@@ -15,6 +15,7 @@
     <sys:String x:Key="StrWaveformPreview">Waveform Preview</sys:String>
     <sys:String x:Key="StrStop">Stop</sys:String>
     <sys:String x:Key="StrMicPassthrough">Keep mic passthrough after stop</sys:String>
+    <sys:String x:Key="StrMicPassthroughTooltip">When checked, pressing Stop only cuts the App audio mix; the microphone keeps streaming to the virtual mic so others can still hear you. No latency impact. Uncheck to fully stop the pipeline on Stop.</sys:String>
     <sys:String x:Key="StrStartMixing">Start Mixing</sys:String>
     <sys:String x:Key="StrPid">PID:</sys:String>
     <sys:String x:Key="StrThemeDark">Dark</sys:String>
@@ -34,6 +35,7 @@
     <sys:String x:Key="StrTrayShow">Show VoicePipe</sys:String>
     <sys:String x:Key="StrTrayExit">Exit</sys:String>
     <sys:String x:Key="StrNoiseGate">Noise Reduction</sys:String>
+    <sys:String x:Key="StrNoiseGateTooltip">RNNoise neural-network voice denoiser. Microphone path only — App audio is untouched. The strength slider blends dry/wet (0 = original voice, 1 = maximum suppression). Inline processing on the capture thread, latency essentially unchanged.</sys:String>
     <sys:String x:Key="StrNoiseGateEnable">Enable noise reduction (microphone only)</sys:String>
     <sys:String x:Key="StrNoiseGateThreshold">Threshold</sys:String>
     <sys:String x:Key="StrDenoiseStrength">Strength</sys:String>

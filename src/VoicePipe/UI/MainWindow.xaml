@@ -86,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.10" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.11" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -207,9 +207,24 @@
                         BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                         CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
                     <StackPanel>
-                        <TextBlock Text="{DynamicResource StrMicrophoneInput}"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <!-- 标题行：左侧标题 / 右侧"停止保留直通"开关（与波形预览的频谱开关、降噪开关风格一致） -->
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{DynamicResource StrMicrophoneInput}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="{DynamicResource StrMicPassthrough}"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       ToolTip="{DynamicResource StrMicPassthroughTooltip}"/>
+                            <CheckBox Grid.Column="2" IsChecked="{Binding MicPassthrough, Mode=TwoWay}"
+                                      VerticalAlignment="Center"
+                                      ToolTip="{DynamicResource StrMicPassthroughTooltip}"/>
+                        </Grid>
 
                         <ComboBox ItemsSource="{Binding MicDevices}"
                                   SelectedItem="{Binding SelectedMic}"
@@ -306,6 +321,44 @@
                     </Grid>
                 </Border>
 
+                <!-- ── 降噪（RNNoise 神经网络人声降噪，仅作用于麦克风路径，不影响 App 音频）── -->
+                <!-- 主页位置：紧跟音量控制，便于用户在开始混音前/中临时调整 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{DynamicResource StrNoiseGate}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <CheckBox Grid.Column="1" IsChecked="{Binding NoiseGateEnabled, Mode=TwoWay}"
+                                      Foreground="{DynamicResource TextSecBrush}"
+                                      ToolTip="{DynamicResource StrNoiseGateTooltip}"/>
+                        </Grid>
+
+                        <!-- 强度滑块仅在降噪开启时显示，关闭时折叠节省空间 -->
+                        <Grid Visibility="{Binding NoiseGateEnabled, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="50"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{DynamicResource StrDenoiseStrength}"
+                                       VerticalAlignment="Center" FontSize="12"
+                                       Foreground="{DynamicResource TextSecBrush}"/>
+                            <ui:SmoothSlider Grid.Column="1" Value="{Binding DenoiseStrength, Mode=TwoWay}"
+                                    Minimum="0" Maximum="1" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Text="{Binding DenoiseStrength, StringFormat={}{0:P0}}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
                 <!-- ── 波形预览 ── -->
                 <Border Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
@@ -369,12 +422,6 @@
                             Width="160" Height="44"
                             Visibility="{Binding IsRunning, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"/>
                 </Grid>
-
-                <CheckBox HorizontalAlignment="Center" Margin="0,12,0,0"
-                          IsChecked="{Binding MicPassthrough, Mode=TwoWay}"
-                          Foreground="{DynamicResource TextSecBrush}" FontSize="12">
-                    <TextBlock Text="{DynamicResource StrMicPassthrough}"/>
-                </CheckBox>
             </StackPanel>
         </ScrollViewer>
 
@@ -469,37 +516,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 降噪（RNNoise 神经网络，自动工作，无需阈值） -->
-                <Border Background="{DynamicResource BgPanelBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                        CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
-                    <StackPanel>
-                        <TextBlock Text="{DynamicResource StrNoiseGate}"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                        <CheckBox IsChecked="{Binding NoiseGateEnabled, Mode=TwoWay}"
-                                  Foreground="{DynamicResource TextPrimaryBrush}">
-                            <TextBlock Text="{DynamicResource StrNoiseGateEnable}"/>
-                        </CheckBox>
-
-                        <!-- 降噪强度（干湿混合）：调小保留更多原声让人声更自然，调大更彻底去噪 -->
-                        <Grid Margin="0,14,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="50"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="{DynamicResource StrDenoiseStrength}"
-                                       VerticalAlignment="Center" FontSize="12" Margin="0,0,12,0"
-                                       Foreground="{DynamicResource TextSecBrush}"/>
-                            <ui:SmoothSlider Grid.Column="1" Value="{Binding DenoiseStrength, Mode=TwoWay}"
-                                    Minimum="0" Maximum="1" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Text="{Binding DenoiseStrength, StringFormat={}{0:P0}}"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                       HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
+                <!-- 降噪已迁到主页（v1.2.11）：用户使用流程在主页，临时调整不再要跑设置页。 -->
 
                 <!-- 本地监听（把混音回放到耳机，实时听自己发出去的效果；独立链，不影响 VB-Cable 延迟） -->
                 <Border Background="{DynamicResource BgPanelBrush}"
