@@ -8,6 +8,7 @@
     <a href="https://github.com/Yamada-Ryo4/VoicePipe/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Yamada-Ryo4/VoicePipe?style=flat-square&color=007ec6" alt="License"></a>
     <a href="https://github.com/Yamada-Ryo4/VoicePipe/stargazers"><img src="https://img.shields.io/github/stars/Yamada-Ryo4/VoicePipe?style=flat-square&color=e3b341" alt="Stars"></a>
     <img src="https://img.shields.io/badge/Platform-Windows%2010%2B-blue?style=flat-square&logo=windows" alt="Windows">
+    <a href="https://support.yamadaryo.me/"><img src="https://img.shields.io/badge/Support-%E2%98%95%20Buy%20me%20a%20coffee-10B981?style=flat-square" alt="Support"></a>
   </p>
 
   <p>
