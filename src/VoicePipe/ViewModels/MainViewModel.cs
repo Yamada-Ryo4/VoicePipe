@@ -322,9 +322,14 @@ public partial class MainViewModel : ObservableObject
     {
         if (_autoStartAttempted) return;
         if (!_settings.AutoStartPipeline) return; // Req 5.8：关闭时静默
-        // ★ 只有上次退出时管线还在跑，才自动恢复运行；上次主动停止过的就保持停止状态
-        // （遵循"上次关掉是什么样，本次启动就是什么样"的预期）
-        if (!_settings.LastWasRunning)
+        // ★ 决定恢复到哪种状态：
+        //   LastWasRunning=true   → 完整恢复混音（StartPipeline）
+        //   LastWasMicPassthrough=true → 恢复到麦克风直通（StartPipeline 后立刻 StopPipeline，
+        //                                由于 MicPassthrough 已勾选，会走 StopAppOnly 进入直通）
+        //   都为 false             → 用户上次完全停止过，本次保持 Idle，不自启
+        bool resumeFull = _settings.LastWasRunning;
+        bool resumePassthrough = _settings.LastWasMicPassthrough;
+        if (!resumeFull && !resumePassthrough)
         {
             _autoStartAttempted = true;
             return;
@@ -354,7 +359,25 @@ public partial class MainViewModel : ObservableObject
         // Req 5.5：两者都可用 → 自动启动
         SelectedProcess = proc;
         SelectedMic = mic;
-        _ = StartPipelineCommand.ExecuteAsync(null);
+
+        // 异步启动，启动完成后若是直通模式则立刻 StopAppOnly 切到直通状态
+        _ = ResumeAsync(resumePassthrough);
+    }
+
+    /// <summary>
+    /// 启动管线后按上次的状态决定是否切到直通：
+    /// resumePassthrough=true → 启动 → 立刻按 Stop（MicPassthrough 已勾选 → StopAppOnly 进入直通）
+    /// resumePassthrough=false → 正常完整运行
+    /// </summary>
+    private async Task ResumeAsync(bool resumePassthrough)
+    {
+        await StartPipelineCommand.ExecuteAsync(null);
+        if (resumePassthrough && IsRunning)
+        {
+            // MicPassthrough 此时应已被构造函数恢复为 true（持久化勾选）
+            // → StopPipeline 会走 MicPassthrough 分支，调 StopAppOnly 进入直通
+            await StopPipelineCommand.ExecuteAsync(null);
+        }
     }
 
     [RelayCommand]
@@ -413,6 +436,7 @@ public partial class MainViewModel : ObservableObject
             _settings.AppGain = AppGain;
             _settings.MicGain = MicGain;
             _settings.LastWasRunning = true; // ★ 标记当前在跑，下次启动可恢复
+            _settings.LastWasMicPassthrough = false; // ★ 完整运行模式，清掉直通标记
             _settings.Save();
         }
         catch (Exception ex)
@@ -425,9 +449,10 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task StopPipeline()
     {
-        // ★ 用户主动停止 → 标记本次会话已停止，下次启动不再自动恢复
+        // ★ 用户主动停止 → 标记本次会话状态，下次启动按相同状态恢复
         // （遵循"上次关掉是什么样，本次启动就是什么样"的预期）
-        _settings.LastWasRunning = false;
+        _settings.LastWasRunning = false; // 完整运行已结束
+        _settings.LastWasMicPassthrough = MicPassthrough; // 若勾了直通，记下进入了直通状态
         _settings.Save();
 
         if (MicPassthrough)
@@ -464,6 +489,9 @@ public partial class MainViewModel : ObservableObject
             _isMicPassthroughActive = false;
             StatusText = "Stopped";
             PeakMonitor.SetRunningMic(null);
+            // ★ 直通已结束（用户取消勾选），清掉直通状态标记
+            _settings.LastWasMicPassthrough = false;
+            _settings.Save();
         }
     }
 

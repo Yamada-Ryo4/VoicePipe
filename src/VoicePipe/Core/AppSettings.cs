@@ -48,6 +48,10 @@ public class AppSettings
     // 这样用户上次手动按了"停止"再退出，下次启动就不会被自动启动覆盖到运行状态。
     public bool   LastWasRunning     { get; set; } = false;
 
+    // 上次结束于"麦克风直通"状态（按了"停止"但勾了 MicPassthrough）。
+    // 启动时如果 LastWasMicPassthrough=true，自动进入直通；否则按 LastWasRunning 决定是否完整恢复。
+    public bool   LastWasMicPassthrough { get; set; } = false;
+
     public HotkeyBinding MuteHotkey     { get; set; } = HotkeyBinding.None; // Req 2.3
     public HotkeyBinding PipelineHotkey { get; set; } = HotkeyBinding.None; // Req 2.3
     // MicMuted is intentionally NOT persisted (session-only). App starts unmuted.
