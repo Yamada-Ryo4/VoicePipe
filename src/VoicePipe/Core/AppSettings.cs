@@ -38,6 +38,9 @@ public class AppSettings
     // 首次使用引导：首次启动显示一次上手说明，看过后置 true 不再显示
     public bool   FirstRunDone       { get; set; } = false;
 
+    // 启动时自动检查更新（默认开启）
+    public bool   AutoCheckUpdate    { get; set; } = true;
+
     public HotkeyBinding MuteHotkey     { get; set; } = HotkeyBinding.None; // Req 2.3
     public HotkeyBinding PipelineHotkey { get; set; } = HotkeyBinding.None; // Req 2.3
     // MicMuted is intentionally NOT persisted (session-only). App starts unmuted.

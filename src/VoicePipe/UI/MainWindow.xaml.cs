@@ -166,6 +166,15 @@ public partial class MainWindow : Window
         Close();
     }
 
+    // ── 音量重置：App=70% Mic=100%（默认值）──
+    private void ResetVolume_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm) return;
+        vm.AppGain = 0.70f;
+        vm.MicGain = 1.0f;
+        Serilog.Log.Information("音量已重置为默认值 App=70% Mic=100%");
+    }
+
     // ── 热键重置：把两个热键都清为"未设置"（None），并注销已注册的全局热键 ──
     private void ResetHotkeys_Click(object sender, RoutedEventArgs e)
     {

@@ -86,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.5" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.6" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -263,9 +263,16 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Row="0" Text="{DynamicResource StrVolumeControl}"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,16"/>
+                        <Grid Grid.Row="0" Margin="0,0,0,16">
+                            <TextBlock Text="{DynamicResource StrVolumeControl}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <TextBlock Text="↺" FontSize="14" Cursor="Hand"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       ToolTip="Reset to default"
+                                       MouseLeftButtonUp="ResetVolume_Click"/>
+                        </Grid>
 
                         <Grid Grid.Row="1" Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
@@ -573,6 +580,10 @@
                         <CheckBox IsChecked="{Binding StartMinimized, Mode=TwoWay}"
                                   Foreground="{DynamicResource TextPrimaryBrush}">
                             <TextBlock Text="{DynamicResource StrStartMinimized}"/>
+                        </CheckBox>
+                        <CheckBox IsChecked="{Binding AutoCheckUpdate, Mode=TwoWay}"
+                                  Foreground="{DynamicResource TextPrimaryBrush}">
+                            <TextBlock Text="{DynamicResource StrAutoCheckUpdate}"/>
                         </CheckBox>
                     </StackPanel>
                 </Border>

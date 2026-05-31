@@ -46,6 +46,7 @@
     <sys:String x:Key="StrMonitorDefaultDevice">系統預設</sys:String>
     <sys:String x:Key="StrMonitorVolume">監聽音量</sys:String>
     <sys:String x:Key="StrStartMinimized">開機時靜默最小化到系統匣</sys:String>
+    <sys:String x:Key="StrAutoCheckUpdate">啟動時自動檢查更新</sys:String>
     <sys:String x:Key="StrSpectrumMode">頻譜圖</sys:String>
     <sys:String x:Key="StrTipMicMuted">麥克風已靜音</sys:String>
     <sys:String x:Key="StrTipMicUnmuted">麥克風已取消靜音</sys:String>

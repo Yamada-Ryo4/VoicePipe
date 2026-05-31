@@ -46,6 +46,7 @@
     <sys:String x:Key="StrMonitorDefaultDevice">システム既定</sys:String>
     <sys:String x:Key="StrMonitorVolume">モニター音量</sys:String>
     <sys:String x:Key="StrStartMinimized">起動時にトレイへ最小化</sys:String>
+    <sys:String x:Key="StrAutoCheckUpdate">起動時に更新を確認</sys:String>
     <sys:String x:Key="StrSpectrumMode">スペクトラム表示</sys:String>
     <sys:String x:Key="StrTipMicMuted">マイクをミュートしました</sys:String>
     <sys:String x:Key="StrTipMicUnmuted">マイクのミュートを解除しました</sys:String>

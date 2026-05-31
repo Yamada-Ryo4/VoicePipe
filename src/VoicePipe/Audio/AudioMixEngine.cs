@@ -13,14 +13,16 @@ namespace VoicePipe.Audio;
 /// </summary>
 public class AudioMixEngine : IWaveProvider, IDisposable
 {
-    // 200ms 缓冲：足够应对 WASAPI 回调间隔波动
-    private readonly RingBuffer _appBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 200 / 1000);
-    private readonly RingBuffer _micBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 200 / 1000);
+    // 100ms 缓冲：WASAPI 共享模式 packet 间隔稳定在 ~10ms，100ms = 10 个 packet 余量绰绰有余。
+    // 比之前 200ms 更紧凑：堆积超过 100ms 时旧数据被覆盖（RingBuffer 推进读指针），
+    // 强制把最大延迟钳在 ~100ms 以内，避免数据在 buffer 里无限堆积导致延迟越来越高。
+    private readonly RingBuffer _appBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 100 / 1000);
+    private readonly RingBuffer _micBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 100 / 1000);
 
     // ★ 本地监听（把混音送到耳机/默认播放设备）专用的独立缓冲。
     //   完全独立于 VB-Cable 输出路径：Read() 在生成 VB-Cable 数据的同一循环里顺手把监听信号写进这里，
     //   由独立的 MonitorProvider + WasapiOut（默认设备）拉取。绝不影响 VB-Cable 的 10ms 低延迟。
-    private readonly RingBuffer _monitorBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 200 / 1000);
+    private readonly RingBuffer _monitorBuffer = new(AudioFormat.SampleRate * AudioFormat.Channels * 100 / 1000);
 
     // 麦克风降噪：RNNoise（RNN 神经网络）实时人声降噪，仅作用于 Mic_Path。
     // 在 FeedMic 中 Resample 到统一采样率（48000）立体声之后、写入 _micBuffer 之前原地处理。

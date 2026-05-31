@@ -107,6 +107,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _autoStartBoot;
     [ObservableProperty] private bool _autoStartPipelineSetting;
     [ObservableProperty] private bool _startMinimized;
+    [ObservableProperty] private bool _autoCheckUpdate;
 
     // 热键绑定 + 冲突标志
     [ObservableProperty] private HotkeyBinding _muteHotkey;
@@ -503,9 +504,14 @@ public partial class MainViewModel : ObservableObject
         _settings.AutoStartBoot = AutoStartBoot;
         AutoStartPipelineSetting = _settings.AutoStartPipeline;
         StartMinimized = _settings.StartMinimized;
+        AutoCheckUpdate = _settings.AutoCheckUpdate;
         MuteHotkey = _settings.MuteHotkey;
         PipelineHotkey = _settings.PipelineHotkey;
         _settingsLoading = false;
+
+        // ★ 启动时自动检查更新（开关开启时，静默检查，有新版才弹窗）
+        if (_settings.AutoCheckUpdate)
+            _ = CheckUpdateCommand.ExecuteAsync(null);
     }
 
     private void PersistSettings()
@@ -603,6 +609,13 @@ public partial class MainViewModel : ObservableObject
     {
         _settings.StartMinimized = value;
         if (!_settingsLoading) Serilog.Log.Information("开机静默到托盘: {State}", value ? "开" : "关");
+        PersistSettings();
+    }
+
+    partial void OnAutoCheckUpdateChanged(bool value)
+    {
+        _settings.AutoCheckUpdate = value;
+        if (!_settingsLoading) Serilog.Log.Information("启动自动检查更新: {State}", value ? "开" : "关");
         PersistSettings();
     }
 

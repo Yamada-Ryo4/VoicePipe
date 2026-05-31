@@ -46,6 +46,7 @@
     <sys:String x:Key="StrMonitorDefaultDevice">System default</sys:String>
     <sys:String x:Key="StrMonitorVolume">Monitor volume</sys:String>
     <sys:String x:Key="StrStartMinimized">Start minimized to tray (on boot)</sys:String>
+    <sys:String x:Key="StrAutoCheckUpdate">Check for updates on startup</sys:String>
     <sys:String x:Key="StrSpectrumMode">Spectrum view</sys:String>
     <sys:String x:Key="StrTipMicMuted">Microphone muted</sys:String>
     <sys:String x:Key="StrTipMicUnmuted">Microphone unmuted</sys:String>

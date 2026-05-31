@@ -46,6 +46,7 @@
     <sys:String x:Key="StrMonitorDefaultDevice">시스템 기본값</sys:String>
     <sys:String x:Key="StrMonitorVolume">모니터 볼륨</sys:String>
     <sys:String x:Key="StrStartMinimized">시작 시 트레이로 최소화</sys:String>
+    <sys:String x:Key="StrAutoCheckUpdate">시작 시 업데이트 확인</sys:String>
     <sys:String x:Key="StrSpectrumMode">스펙트럼 보기</sys:String>
     <sys:String x:Key="StrTipMicMuted">마이크 음소거됨</sys:String>
     <sys:String x:Key="StrTipMicUnmuted">마이크 음소거 해제됨</sys:String>
