@@ -76,11 +76,21 @@ public partial class MainWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         _hotkeys.Initialize(hwnd);
         _hotkeys.HotkeyPressed += OnHotkeyPressed;
-        _hotkeys.Register(HotkeyManager.Action.ToggleMute, settings.MuteHotkey);
-        _hotkeys.Register(HotkeyManager.Action.TogglePipeline, settings.PipelineHotkey);
+        // ★ 初始注册时也要把冲突状态记下，传给 InitSettings 在 UI 上正确显示
+        bool muteOk     = _hotkeys.Register(HotkeyManager.Action.ToggleMute, settings.MuteHotkey);
+        bool pipelineOk = _hotkeys.Register(HotkeyManager.Action.TogglePipeline, settings.PipelineHotkey);
 
-        // 注入设置服务到 ViewModel（内嵌设置面板用）
-        (DataContext as ViewModels.MainViewModel)?.InitSettings(_hotkeys, _autoStart);
+        // 注入设置服务到 ViewModel（内嵌设置面板用），并把初始冲突状态传过去
+        if (DataContext is ViewModels.MainViewModel vm)
+        {
+            vm.InitSettings(_hotkeys, _autoStart);
+            // 仅当热键真有设值且注册失败时才标冲突；未设置（None）的不算
+            vm.MuteHotkeyConflict     = settings.MuteHotkey.IsSet     && !muteOk;
+            vm.PipelineHotkeyConflict = settings.PipelineHotkey.IsSet && !pipelineOk;
+            if (vm.MuteHotkeyConflict || vm.PipelineHotkeyConflict)
+                Serilog.Log.Warning("启动时热键冲突: Mute={MuteConflict} Pipeline={PipelineConflict}",
+                    vm.MuteHotkeyConflict, vm.PipelineHotkeyConflict);
+        }
 
         // 对账开机自启：以注册表实际状态为准回写持久化意图
         try { settings.AutoStartBoot = _autoStart.IsEnabled(); } catch { }

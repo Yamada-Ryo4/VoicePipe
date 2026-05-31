@@ -144,6 +144,7 @@ public partial class MainViewModel : ObservableObject
         AppGain = _settings.AppGain;
         MicGain = _settings.MicGain;
         ShowSpectrum = _settings.ShowSpectrum;
+        MicPassthrough = _settings.MicPassthrough; // ★ 恢复上次的"停止后保留麦克风直通"勾选状态
         ShowFirstRunGuide = !_settings.FirstRunDone; // 首次启动显示引导
         _settingsLoading = false;
 
@@ -321,6 +322,13 @@ public partial class MainViewModel : ObservableObject
     {
         if (_autoStartAttempted) return;
         if (!_settings.AutoStartPipeline) return; // Req 5.8：关闭时静默
+        // ★ 只有上次退出时管线还在跑，才自动恢复运行；上次主动停止过的就保持停止状态
+        // （遵循"上次关掉是什么样，本次启动就是什么样"的预期）
+        if (!_settings.LastWasRunning)
+        {
+            _autoStartAttempted = true;
+            return;
+        }
         _autoStartAttempted = true;
 
         // 按上次记录匹配源/麦克风
@@ -404,6 +412,7 @@ public partial class MainViewModel : ObservableObject
             _settings.LastMicDeviceId = SelectedMic.Id;
             _settings.AppGain = AppGain;
             _settings.MicGain = MicGain;
+            _settings.LastWasRunning = true; // ★ 标记当前在跑，下次启动可恢复
             _settings.Save();
         }
         catch (Exception ex)
@@ -416,6 +425,11 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task StopPipeline()
     {
+        // ★ 用户主动停止 → 标记本次会话已停止，下次启动不再自动恢复
+        // （遵循"上次关掉是什么样，本次启动就是什么样"的预期）
+        _settings.LastWasRunning = false;
+        _settings.Save();
+
         if (MicPassthrough)
         {
             // 仅停止 App 音频，保留麦克风直通（麦克风仍被 MicCapturer 占用）
@@ -439,6 +453,10 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnMicPassthroughChanged(bool value)
     {
+        // ★ 持久化：勾选状态保存到 settings，下次启动恢复
+        _settings.MicPassthrough = value;
+        PersistSettings();
+
         // 取消勾选时，如果正在直通，则完全停止
         if (!value && _isMicPassthroughActive)
         {
@@ -509,9 +527,15 @@ public partial class MainViewModel : ObservableObject
         PipelineHotkey = _settings.PipelineHotkey;
         _settingsLoading = false;
 
-        // ★ 启动时自动检查更新（开关开启时，静默检查，有新版才弹窗）
+        // ★ 启动时自动检查更新（开关开启时，延迟 5 秒后台静默检查；
+        //    silent 模式：没新版或网络失败都不打扰用户，只在有新版时弹询问；
+        //    国内网络不稳时立即检查会卡 UI 几秒后弹失败提示，体验差）
         if (_settings.AutoCheckUpdate)
-            _ = CheckUpdateCommand.ExecuteAsync(null);
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(5000);
+                await Application.Current.Dispatcher.InvokeAsync(() => CheckUpdateSilent());
+            });
     }
 
     private void PersistSettings()
@@ -675,27 +699,37 @@ public partial class MainViewModel : ObservableObject
     /// <summary>
     /// 检查 GitHub 是否有新版本。有则提示用户是否更新，确认后下载安装包并运行（走安装流程覆盖安装）。
     /// 全程 try/catch，网络/解析失败只在状态栏提示，不崩溃。
+    /// silent=true（启动时自动检查）：没新版/出错时静默，不动 UpdateStatus、不弹任何窗，只在有新版时弹询问；
+    /// silent=false（用户主动点"检查更新"）：所有结果都更新 UpdateStatus，便于用户知道发生了什么。
     /// </summary>
     [RelayCommand]
-    private async Task CheckUpdate()
+    private Task CheckUpdate() => CheckUpdateInternal(silent: false);
+
+    /// <summary>启动时自动检查（silent 模式入口，不走 RelayCommand 避免误触发 IsCheckingUpdate UI）。</summary>
+    private Task CheckUpdateSilent() => CheckUpdateInternal(silent: true);
+
+    private async Task CheckUpdateInternal(bool silent)
     {
         if (IsCheckingUpdate) return;
         IsCheckingUpdate = true;
-        UpdateStatus = Application.Current.TryFindResource("StrUpdateChecking") as string ?? "Checking...";
+        if (!silent)
+            UpdateStatus = Application.Current.TryFindResource("StrUpdateChecking") as string ?? "Checking...";
         try
         {
             var result = await _updateService.CheckAsync();
 
             if (result.Error != null)
             {
-                UpdateStatus = Application.Current.TryFindResource("StrUpdateFailed") as string ?? "Check failed";
+                if (!silent)
+                    UpdateStatus = Application.Current.TryFindResource("StrUpdateFailed") as string ?? "Check failed";
                 return;
             }
 
             if (!result.Available)
             {
-                UpdateStatus = (Application.Current.TryFindResource("StrUpdateLatest") as string ?? "Already latest")
-                               + $" (v{result.LocalVersion})";
+                if (!silent)
+                    UpdateStatus = (Application.Current.TryFindResource("StrUpdateLatest") as string ?? "Already latest")
+                                   + $" (v{result.LocalVersion})";
                 return;
             }
 
@@ -778,7 +812,9 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "CheckUpdate: 异常");
-            UpdateStatus = Application.Current.TryFindResource("StrUpdateFailed") as string ?? "Check failed";
+            // silent 模式下不打扰用户，连状态栏都不动
+            if (!silent)
+                UpdateStatus = Application.Current.TryFindResource("StrUpdateFailed") as string ?? "Check failed";
         }
         finally
         {

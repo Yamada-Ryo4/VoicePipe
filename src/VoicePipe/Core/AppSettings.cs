@@ -41,6 +41,13 @@ public class AppSettings
     // 启动时自动检查更新（默认开启）
     public bool   AutoCheckUpdate    { get; set; } = true;
 
+    // 停止后保留麦克风直通：勾选时点"停止"只断 App 音频，麦克风继续直通到 VB-Cable
+    public bool   MicPassthrough     { get; set; } = false;
+
+    // 上次退出时管线是否在跑：用于"自动启动管线"开关下，决定本次启动是否真的恢复混音。
+    // 这样用户上次手动按了"停止"再退出，下次启动就不会被自动启动覆盖到运行状态。
+    public bool   LastWasRunning     { get; set; } = false;
+
     public HotkeyBinding MuteHotkey     { get; set; } = HotkeyBinding.None; // Req 2.3
     public HotkeyBinding PipelineHotkey { get; set; } = HotkeyBinding.None; // Req 2.3
     // MicMuted is intentionally NOT persisted (session-only). App starts unmuted.

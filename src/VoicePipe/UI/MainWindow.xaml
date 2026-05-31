@@ -86,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.7" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.8" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -417,6 +417,7 @@
                             <Button Content="{DynamicResource StrHotkeyReset}"
                                     HorizontalAlignment="Right" VerticalAlignment="Center"
                                     Style="{StaticResource GhostButton}"
+                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                     Padding="10,3" FontSize="11"
                                     Click="ResetHotkeys_Click"/>
                         </Grid>
@@ -528,7 +529,17 @@
                                 <ComboBox Grid.Column="1" Height="30"
                                           ItemsSource="{Binding MonitorDevices}"
                                           SelectedItem="{Binding SelectedMonitorDevice, Mode=TwoWay}"
-                                          DisplayMemberPath="Name"/>
+                                          DisplayMemberPath="Name"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          Background="{DynamicResource BgCardBrush}">
+                                    <!-- ★ 强制下拉项跟随主题色：避免暗色主题下默认 ComboBoxItem 黑字与深色背景融合看不见 -->
+                                    <ComboBox.ItemContainerStyle>
+                                        <Style TargetType="ComboBoxItem">
+                                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                            <Setter Property="Background" Value="{DynamicResource BgCardBrush}"/>
+                                        </Style>
+                                    </ComboBox.ItemContainerStyle>
+                                </ComboBox>
                             </Grid>
                             <!-- 监听音量（独立于发出去的音量） -->
                             <Grid Margin="0,0,0,10">
@@ -638,6 +649,7 @@
                                        Text="{Binding UpdateStatus}"/>
                             <Button Grid.Column="2" Style="{StaticResource GhostButton}"
                                     Padding="14,6" FontSize="12"
+                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                     Content="{DynamicResource StrUpdateCheck}"
                                     Command="{Binding CheckUpdateCommand}"
                                     IsEnabled="{Binding IsCheckingUpdate, Converter={x:Static ui:BoolNegateConverter.Instance}}"/>

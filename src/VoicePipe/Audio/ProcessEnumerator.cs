@@ -14,6 +14,11 @@ public class ProcessEnumerator
     // 而路径对同一 PID 不变，每 2 秒刷新无需重复查询。
     private static readonly Dictionary<int, string?> _iconPathCache = new();
 
+    // 枚举失败的节流：每 2 秒调用一次 GetActiveAudioProcesses，
+    // 失败时只记一次日志，间隔 60s 再记，避免刷屏。
+    private static long _lastEnumErrorLogTick;
+    private const int EnumErrorLogIntervalMs = 60_000;
+
     /// <summary>
     /// 枚举有音频会话的进程，<b>按进程名去重</b>：一个 app 只返回一条，
     /// 代表 PID 取该 app 的「根进程」（顺着父进程链往上找到的最顶层同名进程）。
@@ -92,7 +97,17 @@ public class ProcessEnumerator
                 foreach (var k in dead) _iconPathCache.Remove(k);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // 进程列表枚举失败（COM 异常 / 设备断开），UI 会显示空列表。
+            // 节流：60s 内最多记一次日志，避免持续失败时刷屏。
+            var now = Environment.TickCount64;
+            if (now - _lastEnumErrorLogTick >= EnumErrorLogIntervalMs)
+            {
+                _lastEnumErrorLogTick = now;
+                Serilog.Log.Warning(ex, "ProcessEnumerator: 进程列表枚举失败");
+            }
+        }
         return result;
     }
 
