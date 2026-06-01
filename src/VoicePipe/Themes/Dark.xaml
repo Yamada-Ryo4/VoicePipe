@@ -328,7 +328,10 @@
         </Style.Triggers>
     </Style>
 
-    <!-- ═══ CheckBox — 现代开关样式 (Toggle Switch) ═══ -->
+    <!-- ═══ CheckBox — 现代开关样式 (Toggle Switch) ═══
+         v1.2.12: Thumb 用 ThicknessAnimation 平滑滑动 Margin（180ms EaseOut）。
+         保持 HorizontalAlignment=Left，只在 Margin.Left 上动画（3 → 21），不需要 RenderTransform。
+         Setter 处理初始态（持久化恢复时正确显示），Storyboard 处理过渡动画。-->
     <Style TargetType="CheckBox">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="FontFamily" Value="Segoe UI"/>
@@ -350,10 +353,38 @@
                     </StackPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
+                            <!-- Setter：初始 IsChecked=True 即套用，确保持久化勾选恢复后显示正确 -->
                             <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentBrush}"/>
                             <Setter TargetName="Thumb" Property="Background" Value="White"/>
-                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
-                            <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
+                            <Setter TargetName="Thumb" Property="Margin" Value="21,0,0,0"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <ThicknessAnimation Storyboard.TargetName="Thumb"
+                                                            Storyboard.TargetProperty="Margin"
+                                                            From="3,0,0,0" To="21,0,0,0"
+                                                            Duration="0:0:0.18">
+                                            <ThicknessAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut"/>
+                                            </ThicknessAnimation.EasingFunction>
+                                        </ThicknessAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <ThicknessAnimation Storyboard.TargetName="Thumb"
+                                                            Storyboard.TargetProperty="Margin"
+                                                            From="21,0,0,0" To="3,0,0,0"
+                                                            Duration="0:0:0.18">
+                                            <ThicknessAnimation.EasingFunction>
+                                                <CubicEase EasingMode="EaseOut"/>
+                                            </ThicknessAnimation.EasingFunction>
+                                        </ThicknessAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Track" Property="Opacity" Value="0.85"/>

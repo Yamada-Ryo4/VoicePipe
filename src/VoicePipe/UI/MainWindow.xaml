@@ -86,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.11" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.12" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -340,8 +340,57 @@
                                       ToolTip="{DynamicResource StrNoiseGateTooltip}"/>
                         </Grid>
 
-                        <!-- 强度滑块仅在降噪开启时显示，关闭时折叠节省空间 -->
-                        <Grid Visibility="{Binding NoiseGateEnabled, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}">
+                        <!-- 强度滑块仅在降噪开启时显示，关闭时折叠节省空间。
+                             v1.2.12: 用 DataTrigger 配 Storyboard 做淡入 + 上滑 8px 展开动画，
+                             隐藏时先动画再设 Collapsed（避免动画被瞬间裁剪掉）。 -->
+                        <Grid>
+                            <Grid.RenderTransform>
+                                <TranslateTransform Y="-8"/>
+                            </Grid.RenderTransform>
+                            <Grid.Style>
+                                <Style TargetType="Grid">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Setter Property="Opacity" Value="0"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding NoiseGateEnabled}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility" Duration="0:0:0">
+                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static Visibility.Visible}"/>
+                                                        </ObjectAnimationUsingKeyFrames>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         To="1" Duration="0:0:0.20">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         To="0" Duration="0:0:0.24">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         To="0" Duration="0:0:0.14"/>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         To="-8" Duration="0:0:0.14"/>
+                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility" BeginTime="0:0:0.14">
+                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static Visibility.Collapsed}"/>
+                                                        </ObjectAnimationUsingKeyFrames>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Grid.Style>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="80"/>
                                 <ColumnDefinition Width="*"/>
@@ -531,9 +580,56 @@
                             <TextBlock Text="{DynamicResource StrMonitorEnable}"/>
                         </CheckBox>
 
-                        <!-- 子开关：两个都关 = 监听整个 VoicePipe 输出；仅在主开关开时显示 -->
-                        <StackPanel Margin="20,10,0,0"
-                                    Visibility="{Binding MonitorEnabled, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}">
+                        <!-- 子开关：两个都关 = 监听整个 VoicePipe 输出；仅在主开关开时显示。
+                             v1.2.12: 同款淡入 + 上滑 8px 展开动画，与降噪强度子面板风格一致 -->
+                        <StackPanel Margin="20,10,0,0">
+                            <StackPanel.RenderTransform>
+                                <TranslateTransform Y="-8"/>
+                            </StackPanel.RenderTransform>
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Setter Property="Opacity" Value="0"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding MonitorEnabled}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility" Duration="0:0:0">
+                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static Visibility.Visible}"/>
+                                                        </ObjectAnimationUsingKeyFrames>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         To="1" Duration="0:0:0.20">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         To="0" Duration="0:0:0.24">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         To="0" Duration="0:0:0.14"/>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         To="-8" Duration="0:0:0.14"/>
+                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility" BeginTime="0:0:0.14">
+                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static Visibility.Collapsed}"/>
+                                                        </ObjectAnimationUsingKeyFrames>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
                             <!-- 监听输出设备选择（默认=系统默认） -->
                             <Grid Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
