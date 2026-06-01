@@ -4,8 +4,8 @@
         xmlns:vm="clr-namespace:VoicePipe.ViewModels"
         xmlns:ui="clr-namespace:VoicePipe.UI"
         xmlns:tb="http://www.hardcodet.net/taskbar"
-        Title="VoicePipe" Height="840" Width="780"
-        MinHeight="640" MinWidth="680"
+        Title="VoicePipe" Height="900" Width="1250"
+        MinHeight="680" MinWidth="900"
         Background="{DynamicResource BgDeepBrush}"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -86,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.14" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.15" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
