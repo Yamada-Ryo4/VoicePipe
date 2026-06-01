@@ -41,6 +41,10 @@ public class AppSettings
     // 启动时自动检查更新（默认开启）
     public bool   AutoCheckUpdate    { get; set; } = true;
 
+    // 卡片折叠状态（纯 UI，与功能开关无关）。默认折叠，用户展开后持久化。
+    public bool   MonitorExpanded    { get; set; } = false;
+    public bool   NoiseGateExpanded  { get; set; } = false;
+
     // 停止后保留麦克风直通：勾选时点"停止"只断 App 音频，麦克风继续直通到 VB-Cable
     public bool   MicPassthrough     { get; set; } = false;
 

@@ -86,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.13" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.14" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -293,7 +293,7 @@
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding MonitorEnabled}" Value="True">
+                                            <DataTrigger Binding="{Binding MonitorExpanded}" Value="True">
                                                 <Setter Property="RenderTransform">
                                                     <Setter.Value>
                                                         <RotateTransform Angle="90"/>
@@ -337,7 +337,7 @@
                                       ToolTip="{DynamicResource StrMonitorEnable}"/>
                         </Grid>
 
-                        <!-- 子内容：设备选择、音量、子开关、提示。仅在 MonitorEnabled 时显示，淡入 + 上滑 8px（与降噪同款） -->
+                        <!-- 子内容：设备选择、音量、子开关、提示。折叠状态由 MonitorExpanded 控制（独立于功能开关），淡入 + 上滑 8px -->
                         <Grid Margin="0,12,0,0">
                             <Grid.RenderTransform>
                                 <TranslateTransform Y="-8"/>
@@ -347,7 +347,7 @@
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Setter Property="Opacity" Value="0"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding MonitorEnabled}" Value="True">
+                                        <DataTrigger Binding="{Binding MonitorExpanded}" Value="True">
                                             <DataTrigger.EnterActions>
                                                 <BeginStoryboard>
                                                     <Storyboard>
@@ -520,7 +520,7 @@
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding NoiseGateEnabled}" Value="True">
+                                            <DataTrigger Binding="{Binding NoiseGateExpanded}" Value="True">
                                                 <Setter Property="RenderTransform">
                                                     <Setter.Value>
                                                         <RotateTransform Angle="90"/>
@@ -575,7 +575,7 @@
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Setter Property="Opacity" Value="0"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding NoiseGateEnabled}" Value="True">
+                                        <DataTrigger Binding="{Binding NoiseGateExpanded}" Value="True">
                                             <DataTrigger.EnterActions>
                                                 <BeginStoryboard>
                                                     <Storyboard>

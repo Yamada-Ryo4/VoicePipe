@@ -76,6 +76,10 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private float[] _waveformData = Array.Empty<float>();
 
+    // 卡片折叠状态（纯 UI，与功能开关 MonitorEnabled/NoiseGateEnabled 解耦）。
+    [ObservableProperty] private bool _monitorExpanded;
+    [ObservableProperty] private bool _noiseGateExpanded;
+
     // 频谱数据（双缓冲，与波形并存；由 ShowSpectrum 决定 UI 显示哪个）
     [ObservableProperty] private float[] _spectrumData = Array.Empty<float>();
     [ObservableProperty] private bool _showSpectrum;
@@ -144,6 +148,8 @@ public partial class MainViewModel : ObservableObject
         AppGain = _settings.AppGain;
         MicGain = _settings.MicGain;
         ShowSpectrum = _settings.ShowSpectrum;
+        MonitorExpanded = _settings.MonitorExpanded;     // ★ 折叠状态独立于功能开关
+        NoiseGateExpanded = _settings.NoiseGateExpanded;
         MicPassthrough = _settings.MicPassthrough; // ★ 恢复上次的"停止后保留麦克风直通"勾选状态
         ShowFirstRunGuide = !_settings.FirstRunDone; // 首次启动显示引导
         _settingsLoading = false;
@@ -675,6 +681,18 @@ public partial class MainViewModel : ObservableObject
     {
         _settings.ShowSpectrum = value;
         if (!_settingsLoading) Serilog.Log.Information("可视化模式: {Mode}", value ? "频谱图" : "波形图");
+        PersistSettings();
+    }
+
+    partial void OnMonitorExpandedChanged(bool value)
+    {
+        _settings.MonitorExpanded = value;
+        PersistSettings();
+    }
+
+    partial void OnNoiseGateExpandedChanged(bool value)
+    {
+        _settings.NoiseGateExpanded = value;
         PersistSettings();
     }
 

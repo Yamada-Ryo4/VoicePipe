@@ -364,20 +364,20 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    // ── 降噪标题行点击：切换 NoiseGateEnabled ──
+    // ── 降噪标题行点击：折叠/展开卡片（纯 UI，不动 NoiseGateEnabled 功能开关；点 CheckBox 自己除外） ──
     private void ToggleNoiseGate_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (DataContext is not ViewModels.MainViewModel vm) return;
         if (IsInsideCheckBox(e.OriginalSource as System.Windows.DependencyObject)) return;
-        vm.NoiseGateEnabled = !vm.NoiseGateEnabled;
+        vm.NoiseGateExpanded = !vm.NoiseGateExpanded;
     }
 
-    // ── 监听标题行点击：切换 MonitorEnabled ──
+    // ── 监听标题行点击：折叠/展开卡片（纯 UI，不动 MonitorEnabled 功能开关；点 CheckBox 自己除外） ──
     private void ToggleMonitor_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (DataContext is not ViewModels.MainViewModel vm) return;
         if (IsInsideCheckBox(e.OriginalSource as System.Windows.DependencyObject)) return;
-        vm.MonitorEnabled = !vm.MonitorEnabled;
+        vm.MonitorExpanded = !vm.MonitorExpanded;
     }
 
     private static bool IsInsideCheckBox(System.Windows.DependencyObject? src)
