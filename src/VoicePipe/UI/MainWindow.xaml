@@ -4,8 +4,8 @@
         xmlns:vm="clr-namespace:VoicePipe.ViewModels"
         xmlns:ui="clr-namespace:VoicePipe.UI"
         xmlns:tb="http://www.hardcodet.net/taskbar"
-        Title="VoicePipe" Height="580" Width="780"
-        MinHeight="500" MinWidth="680"
+        Title="VoicePipe" Height="840" Width="780"
+        MinHeight="640" MinWidth="680"
         Background="{DynamicResource BgDeepBrush}"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -86,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.12" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.13" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -140,7 +140,9 @@
         </Border>
 
         <!-- ══════════════ MAIN CONTENT ══════════════ -->
-        <ScrollViewer x:Name="MainContentView" Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0"
+        <!-- VerticalScrollBarVisibility=Visible：常显滚动条，使内容区宽度恒定。
+             否则展开卡片导致内容变高、滚动条 Auto 出现时会让内容区缩 6px，所有滑块 thumb 跟着抖一下。 -->
+        <ScrollViewer x:Name="MainContentView" Grid.Row="1" VerticalScrollBarVisibility="Visible" Padding="0,0,2,0"
                       RenderTransformOrigin="0.5,0.5">
             <ScrollViewer.RenderTransform>
                 <TranslateTransform x:Name="MainContentTransform" X="0"/>
@@ -267,6 +269,179 @@
                     </StackPanel>
                 </Border>
 
+                <!-- ── 本地监听（从设置页迁移，可折叠）── -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,16" Padding="20,12">
+                    <StackPanel>
+                        <!-- 标题行：左侧三角 + 标题 + 右侧开关。整行可点击切换折叠 -->
+                        <Grid Cursor="Hand" Background="Transparent"
+                              MouseLeftButtonUp="ToggleMonitor_Click">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <!-- 旋转三角：折叠 0°(▶) / 展开 90°(▼)，180ms EaseOut -->
+                            <TextBlock Grid.Column="0" Text="▶" FontSize="9"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"
+                                       RenderTransformOrigin="0.5,0.5">
+                                <TextBlock.RenderTransform>
+                                    <RotateTransform Angle="0"/>
+                                </TextBlock.RenderTransform>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding MonitorEnabled}" Value="True">
+                                                <Setter Property="RenderTransform">
+                                                    <Setter.Value>
+                                                        <RotateTransform Angle="90"/>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <DataTrigger.EnterActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                             From="0" To="90" Duration="0:0:0.18">
+                                                                <DoubleAnimation.EasingFunction>
+                                                                    <CubicEase EasingMode="EaseOut"/>
+                                                                </DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.EnterActions>
+                                                <DataTrigger.ExitActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                             From="90" To="0" Duration="0:0:0.18">
+                                                                <DoubleAnimation.EasingFunction>
+                                                                    <CubicEase EasingMode="EaseOut"/>
+                                                                </DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.ExitActions>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Grid.Column="1" Text="{DynamicResource StrMonitor}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <CheckBox Grid.Column="2" IsChecked="{Binding MonitorEnabled, Mode=TwoWay}"
+                                      VerticalAlignment="Center"
+                                      Foreground="{DynamicResource TextSecBrush}"
+                                      ToolTip="{DynamicResource StrMonitorEnable}"/>
+                        </Grid>
+
+                        <!-- 子内容：设备选择、音量、子开关、提示。仅在 MonitorEnabled 时显示，淡入 + 上滑 8px（与降噪同款） -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.RenderTransform>
+                                <TranslateTransform Y="-8"/>
+                            </Grid.RenderTransform>
+                            <Grid.Style>
+                                <Style TargetType="Grid">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Setter Property="Opacity" Value="0"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding MonitorEnabled}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility" Duration="0:0:0">
+                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static Visibility.Visible}"/>
+                                                        </ObjectAnimationUsingKeyFrames>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         To="1" Duration="0:0:0.20">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         To="0" Duration="0:0:0.24">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                         To="0" Duration="0:0:0.14"/>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                         To="-8" Duration="0:0:0.14"/>
+                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility" BeginTime="0:0:0.14">
+                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static Visibility.Collapsed}"/>
+                                                        </ObjectAnimationUsingKeyFrames>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Grid.Style>
+                            <StackPanel>
+                                <!-- 监听输出设备选择 -->
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{DynamicResource StrMonitorDevice}"
+                                               VerticalAlignment="Center" FontSize="12" Margin="0,0,12,0"
+                                               Foreground="{DynamicResource TextSecBrush}"/>
+                                    <ComboBox Grid.Column="1" Height="30"
+                                              ItemsSource="{Binding MonitorDevices}"
+                                              SelectedItem="{Binding SelectedMonitorDevice, Mode=TwoWay}"
+                                              DisplayMemberPath="Name"
+                                              Foreground="{DynamicResource TextPrimaryBrush}"
+                                              Background="{DynamicResource BgCardBrush}">
+                                        <ComboBox.ItemContainerStyle>
+                                            <Style TargetType="ComboBoxItem">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                                <Setter Property="Background" Value="{DynamicResource BgCardBrush}"/>
+                                            </Style>
+                                        </ComboBox.ItemContainerStyle>
+                                    </ComboBox>
+                                </Grid>
+                                <!-- 监听音量 -->
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{DynamicResource StrMonitorVolume}"
+                                               VerticalAlignment="Center" FontSize="12" Margin="0,0,12,0"
+                                               Foreground="{DynamicResource TextSecBrush}"/>
+                                    <ui:SmoothSlider Grid.Column="1" Value="{Binding MonitorGain, Mode=TwoWay}"
+                                            Minimum="0" Maximum="2" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding MonitorGain, StringFormat={}{0:P0}}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
+                                </Grid>
+                                <CheckBox IsChecked="{Binding MonitorApp, Mode=TwoWay}"
+                                          Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8">
+                                    <TextBlock Text="{DynamicResource StrMonitorApp}"/>
+                                </CheckBox>
+                                <CheckBox IsChecked="{Binding MonitorMic, Mode=TwoWay}"
+                                          Foreground="{DynamicResource TextPrimaryBrush}">
+                                    <TextBlock Text="{DynamicResource StrMonitorMic}"/>
+                                </CheckBox>
+                                <TextBlock Text="{DynamicResource StrMonitorHint}"
+                                           Foreground="{DynamicResource TextSecBrush}"
+                                           FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
                 <!-- ── 音量控制 ── -->
                 <Border Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
@@ -325,17 +500,65 @@
                 <!-- 主页位置：紧跟音量控制，便于用户在开始混音前/中临时调整 -->
                 <Border Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                        CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
+                        CornerRadius="8" Margin="0,0,0,16" Padding="20,12">
                     <StackPanel>
-                        <Grid Margin="0,0,0,12">
+                        <Grid Cursor="Hand" Background="Transparent"
+                              MouseLeftButtonUp="ToggleNoiseGate_Click">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="{DynamicResource StrNoiseGate}"
+                            <!-- 旋转三角：折叠 0°(▶) / 展开 90°(▼)，180ms EaseOut -->
+                            <TextBlock Grid.Column="0" Text="▶" FontSize="9"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       VerticalAlignment="Center" Margin="0,0,8,0"
+                                       RenderTransformOrigin="0.5,0.5">
+                                <TextBlock.RenderTransform>
+                                    <RotateTransform Angle="0"/>
+                                </TextBlock.RenderTransform>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding NoiseGateEnabled}" Value="True">
+                                                <Setter Property="RenderTransform">
+                                                    <Setter.Value>
+                                                        <RotateTransform Angle="90"/>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <DataTrigger.EnterActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                             From="0" To="90" Duration="0:0:0.18">
+                                                                <DoubleAnimation.EasingFunction>
+                                                                    <CubicEase EasingMode="EaseOut"/>
+                                                                </DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.EnterActions>
+                                                <DataTrigger.ExitActions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                             From="90" To="0" Duration="0:0:0.18">
+                                                                <DoubleAnimation.EasingFunction>
+                                                                    <CubicEase EasingMode="EaseOut"/>
+                                                                </DoubleAnimation.EasingFunction>
+                                                            </DoubleAnimation>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.ExitActions>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Grid.Column="1" Text="{DynamicResource StrNoiseGate}"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                            <CheckBox Grid.Column="1" IsChecked="{Binding NoiseGateEnabled, Mode=TwoWay}"
+                            <CheckBox Grid.Column="2" IsChecked="{Binding NoiseGateEnabled, Mode=TwoWay}"
                                       Foreground="{DynamicResource TextSecBrush}"
                                       ToolTip="{DynamicResource StrNoiseGateTooltip}"/>
                         </Grid>
@@ -343,7 +566,7 @@
                         <!-- 强度滑块仅在降噪开启时显示，关闭时折叠节省空间。
                              v1.2.12: 用 DataTrigger 配 Storyboard 做淡入 + 上滑 8px 展开动画，
                              隐藏时先动画再设 Collapsed（避免动画被瞬间裁剪掉）。 -->
-                        <Grid>
+                        <Grid Margin="0,12,0,0">
                             <Grid.RenderTransform>
                                 <TranslateTransform Y="-8"/>
                             </Grid.RenderTransform>
@@ -408,46 +631,47 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ── 波形预览 ── -->
+                <!-- ── 波形预览（常显，无折叠）── -->
                 <Border Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                         CornerRadius="8" Margin="0,0,0,24" Padding="20,16">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="72"/>
-                        </Grid.RowDefinitions>
-                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <StackPanel>
+                        <!-- 标题行：标题 + dB 文本 + 频谱开关（最右） -->
+                        <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{DynamicResource StrWaveformPreview}"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                            <!-- 勾选框在固定列里，不随 dB 数字宽度变化而移动 -->
-                            <CheckBox Grid.Column="1" IsChecked="{Binding ShowSpectrum, Mode=TwoWay}"
-                                      VerticalAlignment="Center" Margin="0,0,12,0"
-                                      Foreground="{DynamicResource TextSecBrush}"
-                                      ToolTip="{DynamicResource StrSpectrumMode}"/>
-                            <!-- dB 文本固定宽度 + 右对齐：数字在自己的框内变化，不挤动左边的勾选框 -->
-                            <TextBlock Grid.Column="2" Text="{Binding OutputPeakText}"
+                            <!-- dB 文本（开关左侧，固定宽度右对齐） -->
+                            <TextBlock Grid.Column="1" Text="{Binding OutputPeakText}"
                                        HorizontalAlignment="Right" VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextSecBrush}"
-                                       FontSize="12" FontFamily="Consolas"/>
+                                       FontSize="12" FontFamily="Consolas" Margin="0,0,12,0"/>
+                            <!-- 频谱开关（最右，与其它卡片统一） -->
+                            <CheckBox Grid.Column="2" IsChecked="{Binding ShowSpectrum, Mode=TwoWay}"
+                                      VerticalAlignment="Center"
+                                      Foreground="{DynamicResource TextSecBrush}"
+                                      ToolTip="{DynamicResource StrSpectrumMode}"/>
                         </Grid>
-                        <ui:WaveformControl Grid.Row="1"
-                            WaveformData="{Binding WaveformData}"
-                            Background="{DynamicResource BgCardBrush}"
-                            LineBrush="{DynamicResource AccentBrush}"
-                            Visibility="{Binding ShowSpectrum, Converter={x:Static ui:BoolToInvVisibilityConverter.Instance}}"/>
-                        <ui:SpectrumControl Grid.Row="1"
-                            SpectrumData="{Binding SpectrumData}"
-                            Background="{DynamicResource BgCardBrush}"
-                            LineBrush="{DynamicResource AccentBrush}"
-                            Visibility="{Binding ShowSpectrum, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"/>
-                    </Grid>
+
+                        <!-- 可视化区域：常显 -->
+                        <Grid Height="72">
+                            <ui:WaveformControl
+                                WaveformData="{Binding WaveformData}"
+                                Background="{DynamicResource BgCardBrush}"
+                                LineBrush="{DynamicResource AccentBrush}"
+                                Visibility="{Binding ShowSpectrum, Converter={x:Static ui:BoolToInvVisibilityConverter.Instance}}"/>
+                            <ui:SpectrumControl
+                                SpectrumData="{Binding SpectrumData}"
+                                Background="{DynamicResource BgCardBrush}"
+                                LineBrush="{DynamicResource AccentBrush}"
+                                Visibility="{Binding ShowSpectrum, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"/>
+                        </Grid>
+                    </StackPanel>
                 </Border>
 
                 <Grid>
@@ -475,7 +699,7 @@
         </ScrollViewer>
 
         <!-- ══════════════ SETTINGS VIEW (主页面内嵌) ══════════════ -->
-        <ScrollViewer x:Name="SettingsView" Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,2,0"
+        <ScrollViewer x:Name="SettingsView" Grid.Row="1" VerticalScrollBarVisibility="Visible" Padding="0,0,2,0"
                       Visibility="Collapsed"
                       RenderTransformOrigin="0.5,0.5">
             <ScrollViewer.RenderTransform>
@@ -566,124 +790,7 @@
                 </Border>
 
                 <!-- 降噪已迁到主页（v1.2.11）：用户使用流程在主页，临时调整不再要跑设置页。 -->
-
-                <!-- 本地监听（把混音回放到耳机，实时听自己发出去的效果；独立链，不影响 VB-Cable 延迟） -->
-                <Border Background="{DynamicResource BgPanelBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                        CornerRadius="8" Margin="0,0,0,16" Padding="20,16">
-                    <StackPanel>
-                        <TextBlock Text="{DynamicResource StrMonitor}"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                        <CheckBox IsChecked="{Binding MonitorEnabled, Mode=TwoWay}"
-                                  Foreground="{DynamicResource TextPrimaryBrush}">
-                            <TextBlock Text="{DynamicResource StrMonitorEnable}"/>
-                        </CheckBox>
-
-                        <!-- 子开关：两个都关 = 监听整个 VoicePipe 输出；仅在主开关开时显示。
-                             v1.2.12: 同款淡入 + 上滑 8px 展开动画，与降噪强度子面板风格一致 -->
-                        <StackPanel Margin="20,10,0,0">
-                            <StackPanel.RenderTransform>
-                                <TranslateTransform Y="-8"/>
-                            </StackPanel.RenderTransform>
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Setter Property="Opacity" Value="0"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding MonitorEnabled}" Value="True">
-                                            <DataTrigger.EnterActions>
-                                                <BeginStoryboard>
-                                                    <Storyboard>
-                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility" Duration="0:0:0">
-                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static Visibility.Visible}"/>
-                                                        </ObjectAnimationUsingKeyFrames>
-                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                         To="1" Duration="0:0:0.20">
-                                                            <DoubleAnimation.EasingFunction>
-                                                                <CubicEase EasingMode="EaseOut"/>
-                                                            </DoubleAnimation.EasingFunction>
-                                                        </DoubleAnimation>
-                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                                                         To="0" Duration="0:0:0.24">
-                                                            <DoubleAnimation.EasingFunction>
-                                                                <CubicEase EasingMode="EaseOut"/>
-                                                            </DoubleAnimation.EasingFunction>
-                                                        </DoubleAnimation>
-                                                    </Storyboard>
-                                                </BeginStoryboard>
-                                            </DataTrigger.EnterActions>
-                                            <DataTrigger.ExitActions>
-                                                <BeginStoryboard>
-                                                    <Storyboard>
-                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                         To="0" Duration="0:0:0.14"/>
-                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                                                         To="-8" Duration="0:0:0.14"/>
-                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Visibility" BeginTime="0:0:0.14">
-                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static Visibility.Collapsed}"/>
-                                                        </ObjectAnimationUsingKeyFrames>
-                                                    </Storyboard>
-                                                </BeginStoryboard>
-                                            </DataTrigger.ExitActions>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <!-- 监听输出设备选择（默认=系统默认） -->
-                            <Grid Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{DynamicResource StrMonitorDevice}"
-                                           VerticalAlignment="Center" FontSize="12" Margin="0,0,12,0"
-                                           Foreground="{DynamicResource TextSecBrush}"/>
-                                <ComboBox Grid.Column="1" Height="30"
-                                          ItemsSource="{Binding MonitorDevices}"
-                                          SelectedItem="{Binding SelectedMonitorDevice, Mode=TwoWay}"
-                                          DisplayMemberPath="Name"
-                                          Foreground="{DynamicResource TextPrimaryBrush}"
-                                          Background="{DynamicResource BgCardBrush}">
-                                    <!-- ★ 强制下拉项跟随主题色：避免暗色主题下默认 ComboBoxItem 黑字与深色背景融合看不见 -->
-                                    <ComboBox.ItemContainerStyle>
-                                        <Style TargetType="ComboBoxItem">
-                                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                                            <Setter Property="Background" Value="{DynamicResource BgCardBrush}"/>
-                                        </Style>
-                                    </ComboBox.ItemContainerStyle>
-                                </ComboBox>
-                            </Grid>
-                            <!-- 监听音量（独立于发出去的音量） -->
-                            <Grid Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="50"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{DynamicResource StrMonitorVolume}"
-                                           VerticalAlignment="Center" FontSize="12" Margin="0,0,12,0"
-                                           Foreground="{DynamicResource TextSecBrush}"/>
-                                <ui:SmoothSlider Grid.Column="1" Value="{Binding MonitorGain, Mode=TwoWay}"
-                                        Minimum="0" Maximum="2" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" Text="{Binding MonitorGain, StringFormat={}{0:P0}}"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                           HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
-                            </Grid>
-                            <CheckBox IsChecked="{Binding MonitorApp, Mode=TwoWay}"
-                                      Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8">
-                                <TextBlock Text="{DynamicResource StrMonitorApp}"/>
-                            </CheckBox>
-                            <CheckBox IsChecked="{Binding MonitorMic, Mode=TwoWay}"
-                                      Foreground="{DynamicResource TextPrimaryBrush}">
-                                <TextBlock Text="{DynamicResource StrMonitorMic}"/>
-                            </CheckBox>
-                            <TextBlock Text="{DynamicResource StrMonitorHint}"
-                                       Foreground="{DynamicResource TextSecBrush}"
-                                       FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
+                <!-- 监听已迁到主页（v1.2.13）：跟降噪一样，使用流程在主页。 -->
 
                 <!-- 自动启动 -->
                 <Border Background="{DynamicResource BgPanelBrush}"

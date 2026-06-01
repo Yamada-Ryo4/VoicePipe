@@ -364,6 +364,32 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    // ── 降噪标题行点击：切换 NoiseGateEnabled ──
+    private void ToggleNoiseGate_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm) return;
+        if (IsInsideCheckBox(e.OriginalSource as System.Windows.DependencyObject)) return;
+        vm.NoiseGateEnabled = !vm.NoiseGateEnabled;
+    }
+
+    // ── 监听标题行点击：切换 MonitorEnabled ──
+    private void ToggleMonitor_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm) return;
+        if (IsInsideCheckBox(e.OriginalSource as System.Windows.DependencyObject)) return;
+        vm.MonitorEnabled = !vm.MonitorEnabled;
+    }
+
+    private static bool IsInsideCheckBox(System.Windows.DependencyObject? src)
+    {
+        while (src != null)
+        {
+            if (src is System.Windows.Controls.CheckBox) return true;
+            src = System.Windows.Media.VisualTreeHelper.GetParent(src);
+        }
+        return false;
+    }
+
     // ── 麦克风下拉菜单打开/关闭：控制 PeakMonitor 是否临时监听全部麦克风 ──
     private void MicCombo_DropDownOpened(object sender, EventArgs e)
     {
