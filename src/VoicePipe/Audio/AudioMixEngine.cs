@@ -92,6 +92,20 @@ public class AudioMixEngine : IWaveProvider, IDisposable
     /// <summary>供监听输出端（MonitorProvider）拉取监听 PCM 的缓冲。</summary>
     internal RingBuffer MonitorBuffer => _monitorBuffer;
 
+    // ★ VB-Cable writer 是否在跑。决定监听数据从哪来：
+    //   true  → VB-Cable 的 Read() 在泵动混音引擎，监听从 _monitorBuffer 拉（原逻辑）
+    //   false → 完全停止混音但监听还开着：由监听端 GenerateMonitorStandalone() 自驱动混音引擎
+    //           （消费 app/mic 缓冲 + 跑波形分析 + 直接产出监听 PCM），不经过 _monitorBuffer。
+    //   volatile：UI/管线线程写，监听播放线程读。
+    private volatile bool _vbCableActive;
+
+    /// <summary>VB-Cable 输出链是否活跃。由 PipelineManager 在 Writer 启停时设置。</summary>
+    public bool VbCableActive
+    {
+        get => _vbCableActive;
+        set => _vbCableActive = value;
+    }
+
     /// <summary>降噪启用（透传到 RnnoiseDenoiser）。仅 Mic_Path。(Req 4.5/4.8)</summary>
     public bool NoiseGateEnabled
     {
@@ -257,6 +271,56 @@ public class AudioMixEngine : IWaveProvider, IDisposable
             _monitorBuffer.Write(monBuf, 0, samplesNeeded);
 
         return count; // 永远返回请求的字节数，保证输出流连续
+    }
+
+    /// <summary>
+    /// ★ 独立监听泵（方案 A）：当 VB-Cable writer 不在跑、但监听还开着时，
+    /// 由 MonitorOutput 的 WasapiOut 直接调用本方法驱动混音引擎，把混音结果写进 outBuf（监听设备）。
+    ///
+    /// 与 Read() 的关系：Read() 是给 VB-Cable 的（产 CABLE 输出 + 顺手填监听缓冲）；
+    /// 本方法是给监听的（VB-Cable 停了之后接管泵动）。两者不会同时跑：
+    ///   - VbCableActive=true  时监听走 _monitorBuffer（Read 填的），本方法不被调用
+    ///   - VbCableActive=false 时 Read 没人调，改由本方法消费 app/mic 缓冲 + 跑波形分析 + 产监听 PCM
+    /// 这样停止混音后，监听/波形/麦克风直通仍然活着（前提是 MicCapturer/loopback 还在喂数据）。
+    ///
+    /// outBuf：监听设备的 float32 交错缓冲；samplesNeeded：需要的样本数。
+    /// </summary>
+    public void GenerateMonitorStandalone(float[] outBuf, int samplesNeeded)
+    {
+        var appBuf = samplesNeeded <= MaxSamplesPerRead ? _appTemp : new float[samplesNeeded];
+        var micBuf = samplesNeeded <= MaxSamplesPerRead ? _micTemp : new float[samplesNeeded];
+        Array.Clear(appBuf, 0, samplesNeeded);
+        Array.Clear(micBuf, 0, samplesNeeded);
+
+        _appBuffer.Read(appBuf, 0, samplesNeeded);
+        _micBuffer.Read(micBuf, 0, samplesNeeded);
+
+        float appGain = _appGainAmp;
+        float micGain = _micGainAmp;
+
+        // 监听选择：与 Read() 内的逻辑一致（主开关开 + 两子开关都关 = 整个输出）
+        bool monitorOn = _monitorEnabled;
+        bool monApp, monMic;
+        if (!monitorOn) { monApp = false; monMic = false; }
+        else if (!_monitorApp && !_monitorMic) { monApp = true; monMic = true; }
+        else { monApp = _monitorApp; monMic = _monitorMic; }
+        float monGain = _monitorGainAmp;
+
+        for (int i = 0; i < samplesNeeded; i++)
+        {
+            float appComp = appBuf[i] * appGain;
+            float micComp = _micMuted ? 0f : micBuf[i] * micGain;
+
+            // 波形/频谱：用整个混音(App+Mic)喂，停止混音后波形仍随麦克风/直通动
+            float mixed = SoftLimit(appComp + micComp);
+            WaveformAnalyzer.InlineSample(mixed);
+            SpectrumAnalyzer.InlineSample(mixed);
+
+            // 监听输出：按子开关选择，乘监听音量
+            outBuf[i] = monitorOn
+                ? SoftLimit(((monApp ? appComp : 0f) + (monMic ? micComp : 0f)) * monGain)
+                : 0f;
+        }
     }
 
     // --- 信号处理 ---

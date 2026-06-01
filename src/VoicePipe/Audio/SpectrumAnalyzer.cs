@@ -37,6 +37,12 @@ public static class SpectrumAnalyzer
         _writePos = (p + 1) & FftMask;
     }
 
+    /// <summary>清空频谱环形缓冲（归零）。完全停止管线时调用，使频谱显示平线而非冻结。</summary>
+    public static void Clear()
+    {
+        Array.Clear(_ring, 0, FftSize);
+    }
+
     /// <summary>
     /// UI 线程调用：计算当前频谱，写入 dest（长度需 >= Bars），每条为 0~1 的归一化幅度。
     /// </summary>

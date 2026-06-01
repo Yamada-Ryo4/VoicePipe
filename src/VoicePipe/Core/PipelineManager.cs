@@ -73,8 +73,9 @@ public class PipelineManager : IDisposable
         set
         {
             _mixer.MonitorEnabled = value;
-            // 监听输出链按开关启停（仅在管线运行、已有 _monitor 实例时即时生效）
-            if (value) _monitor?.Start();
+            // 监听输出链按开关启停。开：用幂等 EnsureStarted（避免与 ViewModel.EnsureMonitorRunning 重复 Start）；
+            // 关：停监听输出链。仅在已有 _monitor 实例时即时生效。
+            if (value) _monitor?.EnsureStarted();
             else _monitor?.Stop();
         }
     }
@@ -191,6 +192,7 @@ public class PipelineManager : IDisposable
             _writer = writer;
         }
         // else: 复用现有 writer，CABLE Input 输出从未断过，零延迟切换
+        _mixer.VbCableActive = true; // ★ VB-Cable 在跑，监听走 _monitorBuffer（Read 填的）
 
         // 麦克风：复用就跳过整次 Start（几毫秒级；否则才重建）
         if (!reuseMic)
@@ -217,21 +219,41 @@ public class PipelineManager : IDisposable
         await _gate.WaitAsync();
         try
         {
+        // ★ 停 VB-Cable 输出（writer）。停了之后 _mixer.Read() 不再被泵动，
+        //   VbCableActive=false → 监听改由 GenerateMonitorStandalone 自驱动。
         _writer?.Stop();
         _writer = null;
+        _mixer.VbCableActive = false;
 
-        // ★ 停止本地监听输出（独立链，停止不影响其它）
-        _monitor?.Stop();
+        // ★ 监听是否还开着，决定停止语义：
+        //   监听开 → 保留数据源（MicCapturer + loopback）继续喂混音引擎，
+        //            监听端 WasapiOut 接管泵动 → 停混音后仍能单独听麦克风/App、波形继续动
+        //   监听关 → 完全拆除所有数据源 + 清波形（彻底空闲）
+        bool keepForMonitor = _mixer.MonitorEnabled;
 
-        // 不销毁任何 LoopbackCapturer — 它们在后台保持运行
-        // 但 ★ 全部暂停，避免停止后继续拷贝数据 + 触发事件空转
-        foreach (var capturer in _loopbackCache.Values)
-            capturer.Paused = true;
-
-        _micCapture?.Dispose();
-        _micCapture = null;
-
-        _currentPid = 0;
+        if (keepForMonitor)
+        {
+            // App 不再混入（用户停的是"发往 VB-Cable 的混音"），但 mic 继续喂以便监听麦克风
+            _currentPid = 0;
+            foreach (var capturer in _loopbackCache.Values)
+                capturer.Paused = true;
+            // ★ 监听已开 → 确保监听输出链在跑（它现在自驱动混音引擎）
+            _monitor?.EnsureStarted();
+            // MicCapturer 保持不动，继续 FeedMic → GenerateMonitorStandalone 消费
+        }
+        else
+        {
+            // 完全停止：停监听输出、暂停所有 loopback、释放 mic、清波形显示
+            _monitor?.Stop();
+            foreach (var capturer in _loopbackCache.Values)
+                capturer.Paused = true;
+            _micCapture?.Dispose();
+            _micCapture = null;
+            _currentPid = 0;
+            // ★ 清波形/频谱，避免冻结在最后一帧（B：完全停止后显示平线）
+            WaveformAnalyzer.Clear();
+            SpectrumAnalyzer.Clear();
+        }
         }
         finally
         {
@@ -251,6 +273,60 @@ public class PipelineManager : IDisposable
         // ★ 暂停所有 loopback（App 不再混入），但 Writer/Mic 继续直通
         foreach (var capturer in _loopbackCache.Values)
             capturer.Paused = true;
+    }
+
+    /// <summary>
+    /// ★ 方案 A 支撑：在"完全停止混音"之后，用户单独开启监听时调用。
+    /// 此时 VB-Cable writer 已停（VbCableActive=false），监听由 GenerateMonitorStandalone 自驱动，
+    /// 但需要数据源喂混音引擎。本方法确保：
+    ///   - MicCapturer 在跑（喂麦克风，让监听能听到麦克风、波形能动）
+    ///   - 监听输出链 EnsureStarted
+    /// 不重启 VB-Cable（保持完全停止状态，不往 CABLE 发声）。
+    /// micId 为空则不拉 mic（用户没选麦克风时只是空监听）。
+    /// </summary>
+    public void EnsureMonitorRunning(string micId)
+    {
+        // 监听没开就不做（setter 已处理停止）
+        if (!_mixer.MonitorEnabled) return;
+
+        // VB-Cable 在跑时监听走原路径（_monitorBuffer），无需自驱动，直接确保监听链在跑即可
+        if (_mixer.VbCableActive)
+        {
+            _monitor ??= new MonitorOutput(_mixer);
+            _monitor.TargetDeviceId = _monitorDeviceId;
+            _monitor.EnsureStarted();
+            return;
+        }
+
+        // VB-Cable 停了：确保 mic 在采（喂 GenerateMonitorStandalone）
+        bool micAlive = _micCapture != null && _micCapture.IsAlive
+                        && string.Equals(_micCapture.CurrentDeviceId, micId, StringComparison.Ordinal);
+        if (!micAlive && !string.IsNullOrEmpty(micId))
+        {
+            _micCapture?.Dispose();
+            _micCapture = new MicCapturer();
+            _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
+            _micCapture.Start(micId);
+        }
+
+        _monitor ??= new MonitorOutput(_mixer);
+        _monitor.TargetDeviceId = _monitorDeviceId;
+        _monitor.EnsureStarted();
+    }
+
+    /// <summary>
+    /// ★ 方案 A 支撑：完全停止状态下用户关闭监听时调用。
+    /// 释放为监听单独拉起的 MicCapturer，回到彻底空闲，并清波形。
+    /// 仅在 VB-Cable 未运行时有意义（运行中关监听只停监听输出链，由 MonitorEnabled setter 处理）。
+    /// </summary>
+    public void StopMonitorStandalone()
+    {
+        if (_mixer.VbCableActive) return; // VB-Cable 在跑，mic 归主路径管，别动
+        _monitor?.Stop();
+        _micCapture?.Dispose();
+        _micCapture = null;
+        WaveformAnalyzer.Clear();
+        SpectrumAnalyzer.Clear();
     }
 
     /// <summary>

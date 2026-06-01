@@ -192,15 +192,24 @@ public sealed class MonitorOutput : IDisposable
             int samplesNeeded = count / 4; // float32
             if (_temp.Length < samplesNeeded) _temp = new float[samplesNeeded];
 
-            int got = _engine.MonitorBuffer.Read(_temp, 0, samplesNeeded);
+            if (_engine.VbCableActive)
+            {
+                // VB-Cable 在跑：Read() 已填好 _monitorBuffer，这里拉取即可
+                int got = _engine.MonitorBuffer.Read(_temp, 0, samplesNeeded);
+                for (int i = got; i < samplesNeeded; i++) _temp[i] = 0f; // 不足补零
+            }
+            else
+            {
+                // VB-Cable 停了：监听自驱动混音引擎（消费 app/mic + 跑波形 + 产监听 PCM）
+                _engine.GenerateMonitorStandalone(_temp, samplesNeeded);
+            }
 
             unsafe
             {
                 fixed (byte* ptr = &buffer[offset])
                 {
                     float* fptr = (float*)ptr;
-                    for (int i = 0; i < got; i++) fptr[i] = _temp[i];
-                    for (int i = got; i < samplesNeeded; i++) fptr[i] = 0f; // 不足补零
+                    for (int i = 0; i < samplesNeeded; i++) fptr[i] = _temp[i];
                 }
             }
             return count; // 永远返回请求字节数，保证连续不卡顿

@@ -613,6 +613,15 @@ public partial class MainViewModel : ObservableObject
         _settings.MonitorEnabled = value;
         if (!_settingsLoading) Serilog.Log.Information("本地监听: {State}", value ? "开" : "关");
         PersistSettings();
+
+        // ★ 方案 A：完全停止混音后单独开/关监听也要工作
+        //   开：确保 mic 在采 + 监听链启动（VB-Cable 停了就自驱动混音引擎）
+        //   关：若 VB-Cable 没在跑，释放为监听单独拉起的 mic + 清波形
+        if (_settingsLoading) return;
+        if (value)
+            _pipeline.EnsureMonitorRunning(SelectedMic?.Id ?? "");
+        else
+            _pipeline.StopMonitorStandalone();
     }
 
     partial void OnMonitorAppChanged(bool value)

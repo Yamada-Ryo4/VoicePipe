@@ -72,4 +72,15 @@ public static class WaveformAnalyzer
         // _index 指向下一个要写的槽位，最近写入的是 idx-1
         return _buffer[(idx - 1) & Mask];
     }
+
+    /// <summary>
+    /// 清空波形缓冲（归零）。完全停止管线时调用，使波形显示平线而非冻结在最后一帧。
+    /// </summary>
+    public static void Clear()
+    {
+        Array.Clear(_buffer, 0, Size);
+        _currentPeak = 0;
+        _sampleCount = 0;
+        // _index 不重置：保持滚动位置连续，清零后 GetSnapshot 读到的就是平线
+    }
 }
