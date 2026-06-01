@@ -79,4 +79,5 @@
     <sys:String x:Key="StrClipping">클리핑</sys:String>
     <sys:String x:Key="StrLanguageTheme">언어 및 테마</sys:String>
     <sys:String x:Key="StrMicMuted">마이크 음소거됨</sys:String>
+    <sys:String x:Key="StrOpenConsole">실시간 콘솔 열기</sys:String>
 </ResourceDictionary>

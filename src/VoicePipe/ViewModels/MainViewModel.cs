@@ -170,10 +170,15 @@ public partial class MainViewModel : ObservableObject
         // 监听应用音频捕获彻底失败（LoopbackCapturer 重试耗尽）
         _pipeline.CaptureFailed += (_, msg) =>
         {
-            Application.Current.Dispatcher.BeginInvoke(() =>
+            Application.Current.Dispatcher.BeginInvoke(async () =>
             {
                 StatusText = $"⚠ {msg}";
+                // ★ 必须真正停止管线释放资源（Writer/Mic/Monitor），而非仅改 UI 状态
+                await _pipeline.StopAsync();
+                _isMicPassthroughActive = false;
                 IsRunning = false;
+                if (!MonitorEnabled)
+                    PeakMonitor.SetRunningMic(null);
             });
         };
 
@@ -494,16 +499,24 @@ public partial class MainViewModel : ObservableObject
         // 取消勾选时，如果正在直通，则完全停止
         if (!value && _isMicPassthroughActive)
         {
-            _ = _pipeline.StopAsync();
-            _isMicPassthroughActive = false;
-            StatusText = "Stopped";
-            // ★ 同 StopPipeline：监听开着时 StopAsync 保留了 mic 喂监听，不能误报麦克风已释放
-            if (!MonitorEnabled)
-                PeakMonitor.SetRunningMic(null);
-            // ★ 直通已结束（用户取消勾选），清掉直通状态标记
-            _settings.LastWasMicPassthrough = false;
-            _settings.Save();
+            // ★ 必须 await，否则后续状态更新可能在 StopAsync 完成前执行，
+            //   用户快速点"开始"时会和未完成的 Stop 重叠
+            _ = StopPassthroughAsync();
         }
+    }
+
+    /// <summary>取消直通时的异步停止，确保 StopAsync 完成后再更新状态。</summary>
+    private async Task StopPassthroughAsync()
+    {
+        await _pipeline.StopAsync();
+        _isMicPassthroughActive = false;
+        StatusText = "Stopped";
+        // ★ 同 StopPipeline：监听开着时 StopAsync 保留了 mic 喂监听，不能误报麦克风已释放
+        if (!MonitorEnabled)
+            PeakMonitor.SetRunningMic(null);
+        // ★ 直通已结束（用户取消勾选），清掉直通状态标记
+        _settings.LastWasMicPassthrough = false;
+        _settings.Save();
     }
 
     /// <summary>
@@ -913,6 +926,16 @@ public partial class MainViewModel : ObservableObject
             Serilog.Log.Information("已选择麦克风: {Name}", value.Name);
         if (IsRunning && value != null && SelectedProcess != null)
             _ = StartPipelineCommand.ExecuteAsync(null);
+        // ★ 直通状态下换麦克风：重新走一次 Start → StopAppOnly 路径，让新麦克风生效
+        else if (!IsRunning && _isMicPassthroughActive && value != null && SelectedProcess != null)
+        {
+            _ = Task.Run(async () => await Application.Current.Dispatcher.InvokeAsync(async () =>
+            {
+                await StartPipelineCommand.ExecuteAsync(null);
+                if (IsRunning && MicPassthrough)
+                    await StopPipelineCommand.ExecuteAsync(null);
+            }));
+        }
         // ★ standalone 监听场景（已停止混音但监听开着，IsRunning=false）：
         //   换麦克风时 IsRunning 分支不会触发，需要主动让监听切到新麦克风，否则还在听旧麦克风。
         else if (!IsRunning && !_isMicPassthroughActive && MonitorEnabled && value != null)

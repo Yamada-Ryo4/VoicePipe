@@ -79,4 +79,5 @@
     <sys:String x:Key="StrClipping">クリッピング</sys:String>
     <sys:String x:Key="StrLanguageTheme">言語とテーマ</sys:String>
     <sys:String x:Key="StrMicMuted">マイクミュート中</sys:String>
+    <sys:String x:Key="StrOpenConsole">ライブコンソールを開く</sys:String>
 </ResourceDictionary>

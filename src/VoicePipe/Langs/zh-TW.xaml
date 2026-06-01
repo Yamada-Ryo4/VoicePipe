@@ -79,4 +79,5 @@
     <sys:String x:Key="StrClipping">削波</sys:String>
     <sys:String x:Key="StrLanguageTheme">語言與主題</sys:String>
     <sys:String x:Key="StrMicMuted">麥克風已靜音</sys:String>
+    <sys:String x:Key="StrOpenConsole">開啟即時控制台</sys:String>
 </ResourceDictionary>

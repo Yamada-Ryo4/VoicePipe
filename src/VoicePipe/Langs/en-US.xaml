@@ -79,4 +79,5 @@
     <sys:String x:Key="StrClipping">Clipping</sys:String>
     <sys:String x:Key="StrLanguageTheme">Language &amp; Theme</sys:String>
     <sys:String x:Key="StrMicMuted">Mic muted</sys:String>
+    <sys:String x:Key="StrOpenConsole">Open Live Console</sys:String>
 </ResourceDictionary>
