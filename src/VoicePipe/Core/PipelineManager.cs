@@ -308,6 +308,10 @@ public class PipelineManager : IDisposable
             _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
             _micCapture.Start(micId);
         }
+        // ★ 不论新建还是复用，只要 standalone 监听占用了麦克风，就告知 PeakMonitor
+        //   （其 meter 已被唤醒），避免 PeakMonitor 再开一条静默监听抢同一设备。
+        if (!string.IsNullOrEmpty(micId))
+            PeakMonitor.SetRunningMic(micId);
 
         _monitor ??= new MonitorOutput(_mixer);
         _monitor.TargetDeviceId = _monitorDeviceId;
@@ -325,6 +329,8 @@ public class PipelineManager : IDisposable
         _monitor?.Stop();
         _micCapture?.Dispose();
         _micCapture = null;
+        // ★ 释放麦克风占用，PeakMonitor 可恢复对选中麦克风的静默监听测电平
+        PeakMonitor.SetRunningMic(null);
         WaveformAnalyzer.Clear();
         SpectrumAnalyzer.Clear();
     }

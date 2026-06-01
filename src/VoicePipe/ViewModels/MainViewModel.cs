@@ -476,8 +476,11 @@ public partial class MainViewModel : ObservableObject
             _isMicPassthroughActive = false;
             IsRunning = false;
             StatusText = "Stopped";
-            // ★ 麦克风已释放，恢复对选中麦克风的静默监听
-            PeakMonitor.SetRunningMic(null);
+            // ★ StopAsync 内部：监听开着时会保留 MicCapturer 喂监听（standalone 模式），
+            //   此时麦克风仍被占用，不能告诉 PeakMonitor 已释放（否则它会开静默监听抢设备）。
+            //   只有监听也关了、mic 真被释放时，才恢复 PeakMonitor 的静默测电平。
+            if (!MonitorEnabled)
+                PeakMonitor.SetRunningMic(null);
             Serilog.Log.Information("管线已完全停止");
         }
     }
@@ -494,7 +497,9 @@ public partial class MainViewModel : ObservableObject
             _ = _pipeline.StopAsync();
             _isMicPassthroughActive = false;
             StatusText = "Stopped";
-            PeakMonitor.SetRunningMic(null);
+            // ★ 同 StopPipeline：监听开着时 StopAsync 保留了 mic 喂监听，不能误报麦克风已释放
+            if (!MonitorEnabled)
+                PeakMonitor.SetRunningMic(null);
             // ★ 直通已结束（用户取消勾选），清掉直通状态标记
             _settings.LastWasMicPassthrough = false;
             _settings.Save();
@@ -908,6 +913,10 @@ public partial class MainViewModel : ObservableObject
             Serilog.Log.Information("已选择麦克风: {Name}", value.Name);
         if (IsRunning && value != null && SelectedProcess != null)
             _ = StartPipelineCommand.ExecuteAsync(null);
+        // ★ standalone 监听场景（已停止混音但监听开着，IsRunning=false）：
+        //   换麦克风时 IsRunning 分支不会触发，需要主动让监听切到新麦克风，否则还在听旧麦克风。
+        else if (!IsRunning && !_isMicPassthroughActive && MonitorEnabled && value != null)
+            _pipeline.EnsureMonitorRunning(value.Id);
     }
 
     /// <summary>麦克风下拉菜单打开：临时监听全部麦克风，便于用音量条辨认设备。</summary>
