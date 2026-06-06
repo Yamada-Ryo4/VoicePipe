@@ -394,19 +394,25 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task StartPipeline()
     {
+        Serilog.Log.Information("StartPipeline: 开始 Process={Proc} Mic={Mic} Cable={Cable}",
+            SelectedProcess?.Name ?? "(null)", SelectedMic?.Name ?? "(null)", IsCableAvailable);
+
         if (SelectedProcess == null)
         {
             StatusText = Application.Current.TryFindResource("StrNoSource") as string ?? "Please select an app source";
+            Serilog.Log.Warning("StartPipeline: 未选择音频源，已阻止启动");
             return;
         }
         if (SelectedMic == null)
         {
             StatusText = Application.Current.TryFindResource("StrNoSource") as string ?? "Please select a microphone";
+            Serilog.Log.Warning("StartPipeline: 未选择麦克风，已阻止启动");
             return;
         }
         if (!IsCableAvailable)
         {
-            StatusText = "VB-Cable not detected";
+            Serilog.Log.Warning("StartPipeline: VB-Cable 不可用，尝试引导修复");
+            await RepairVbCableAsync();
             return;
         }
         // ★ 兜底防反馈环路：拒绝把 VB-Cable 回环录音端（CABLE Output 等）当麦克风启动。
@@ -947,6 +953,153 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>麦克风下拉菜单关闭：收回到只监听选中的设备。</summary>
     public void OnMicDropDownClosed() => PeakMonitor.MonitorAllMics = false;
+
+    // ════════════ VB-Cable 修复 ════════════
+
+    /// <summary>
+    /// VB-Cable 不可用时引导用户一键修复（卸载 → 重装）。
+    /// 安装包已将 VBCABLE_Setup_x64.exe 常驻在 {app}\vbcable\ 目录。
+    /// </summary>
+    public async Task RepairVbCableAsync()
+    {
+        // 1. 查找安装包自带的 VB-Cable 安装器
+        string appDir = AppContext.BaseDirectory;
+        string setupExe = System.IO.Path.Combine(appDir, "vbcable", "VBCABLE_Setup_x64.exe");
+
+        if (!System.IO.File.Exists(setupExe))
+        {
+            // 安装器不存在（可能是开发环境或便携版），提示手动下载
+            StatusText = Application.Current.TryFindResource("StrNoCable") as string ?? "VB-Cable not detected";
+            Serilog.Log.Warning("TryRepairVbCable: 安装器不存在: {Path}", setupExe);
+
+            var dlResult = MessageBox.Show(
+                (Application.Current.TryFindResource("StrCableRepairManual") as string
+                 ?? "VB-Cable 虚拟声卡驱动未检测到。\n\n请前往 https://vb-audio.com/Cable/ 下载安装后重启电脑。\n\n是否打开下载页面？"),
+                "VoicePipe",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (dlResult == MessageBoxResult.Yes)
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "https://vb-audio.com/Cable/",
+                    UseShellExecute = true
+                });
+            }
+            return;
+        }
+
+        // 2. 提示用户：检测到 VB-Cable 损坏/缺失，是否尝试修复
+        var answer = MessageBox.Show(
+            (Application.Current.TryFindResource("StrCableRepairPrompt") as string
+             ?? "检测到 VB-Cable 虚拟声卡驱动异常，VoicePipe 无法正常工作。\n\n是否尝试修复？（将卸载并重新安装 VB-Cable 驱动，需要管理员权限）"),
+            "VoicePipe",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (answer != MessageBoxResult.Yes)
+        {
+            StatusText = Application.Current.TryFindResource("StrNoCable") as string ?? "VB-Cable not detected";
+            return;
+        }
+
+        // 3. 执行修复（UI 线程阻塞尽量短，实际安装在后台等待）
+        StatusText = Application.Current.TryFindResource("StrCableRepairing") as string ?? "正在修复 VB-Cable 驱动...";
+        Serilog.Log.Information("TryRepairVbCable: 开始修复 → {Path}", setupExe);
+
+        bool success = await Task.Run(() =>
+        {
+            try
+            {
+                // 第一步：卸载旧驱动（-u 卸载，-h 静默）
+                Serilog.Log.Information("TryRepairVbCable: 正在卸载...");
+                var uninstall = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = setupExe,
+                    Arguments = "-u -h",
+                    UseShellExecute = true,
+                    Verb = "runas"   // 请求 UAC 提权
+                });
+                uninstall?.WaitForExit(30_000); // 最多等 30 秒
+
+                // 等待 Windows 音频子系统刷新
+                System.Threading.Thread.Sleep(2000);
+
+                // 第二步：重新安装（-i 安装，-h 静默）
+                Serilog.Log.Information("TryRepairVbCable: 正在重新安装...");
+                var install = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = setupExe,
+                    Arguments = "-i -h",
+                    UseShellExecute = true,
+                    Verb = "runas"
+                });
+                install?.WaitForExit(30_000);
+
+                // 等待驱动注册完成
+                System.Threading.Thread.Sleep(3000);
+
+                // 检查是否修复成功
+                return VirtualMicWriter.IsCableInputAvailable();
+            }
+            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                // 用户在 UAC 提示中点了"否"
+                Serilog.Log.Warning("TryRepairVbCable: 用户取消了 UAC 授权");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Error(ex, "TryRepairVbCable: 修复过程异常");
+                return false;
+            }
+        });
+
+        // 4. 更新检测状态
+        IsCableAvailable = VirtualMicWriter.IsCableInputAvailable();
+
+        if (success || IsCableAvailable)
+        {
+            StatusText = Application.Current.TryFindResource("StrCableRepaired") as string ?? "VB-Cable 修复成功！";
+            Serilog.Log.Information("RepairVbCable: 修复成功");
+
+            // ★ 提示用户重启电脑以使驱动完全生效
+            var restart = MessageBox.Show(
+                (Application.Current.TryFindResource("StrCableRepairRestart") as string
+                 ?? "VB-Cable 驱动已重新安装！\n\n建议立即重启电脑，让虚拟声卡驱动完全生效。\n\n是否现在重启？"),
+                "VoicePipe", MessageBoxButton.YesNo, MessageBoxImage.Information);
+            if (restart == MessageBoxResult.Yes)
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "shutdown",
+                    Arguments = "/r /t 5 /c \"VoicePipe: VB-Cable 驱动修复完成，正在重启...\"",
+                    UseShellExecute = true,
+                    CreateNoWindow = true
+                });
+                Application.Current.Shutdown();
+            }
+        }
+        else
+        {
+            StatusText = Application.Current.TryFindResource("StrCableRepairFail") as string ?? "VB-Cable 修复失败";
+            Serilog.Log.Warning("RepairVbCable: 修复后仍未检测到 VB-Cable");
+
+            // 修复失败也提示重启：驱动可能已安装但需重启才能激活
+            var restart = MessageBox.Show(
+                (Application.Current.TryFindResource("StrCableRepairFailRestart") as string
+                 ?? "VB-Cable 修复后仍未检测到驱动。\n\n驱动可能已安装但需要重启电脑才能生效。\n是否现在重启？\n\n如果重启后仍无法使用，请手动前往 https://vb-audio.com/Cable/ 下载安装。"),
+                "VoicePipe", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (restart == MessageBoxResult.Yes)
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "shutdown",
+                    Arguments = "/r /t 5 /c \"VoicePipe: VB-Cable 驱动修复完成，正在重启...\"",
+                    UseShellExecute = true,
+                    CreateNoWindow = true
+                });
+                Application.Current.Shutdown();
+            }
+        }
+    }
 
     /// <summary>
     /// 完全清理管线（包括保持运行的 LoopbackCapturer），应用退出时调用。

@@ -80,13 +80,12 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.18" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.19" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -127,7 +126,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Grid.Column="4" CornerRadius="14"
+                <Border Grid.Column="3" CornerRadius="14"
                         BorderBrush="{DynamicResource TextSecBrush}" BorderThickness="1"
                         Background="{DynamicResource BgCardBrush}"
                         VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand"
@@ -891,6 +890,48 @@
                                        FontSize="12" FontFamily="Consolas"
                                        Foreground="{DynamicResource TextSecBrush}"
                                        Text="{Binding DownloadPercentText}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 驱动检测与修复 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,24" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrDriverSection}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                                    <Ellipse.Fill>
+                                        <SolidColorBrush Color="{Binding IsCableAvailable, Converter={x:Static ui:BoolToColorConverter.Instance}}"/>
+                                    </Ellipse.Fill>
+                                </Ellipse>
+                                <TextBlock FontSize="12" Foreground="{DynamicResource TextSecBrush}" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="VB-Cable ✗"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCableAvailable}" Value="True">
+                                                    <Setter Property="Text" Value="VB-Cable ✓"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                            <Button Grid.Column="2" Style="{StaticResource GhostButton}"
+                                    Padding="14,6" FontSize="12"
+                                    Foreground="{DynamicResource TextPrimaryBrush}"
+                                    Content="{DynamicResource StrDriverRepair}"
+                                    Click="RepairVbCable_Click"/>
                         </Grid>
                     </StackPanel>
                 </Border>

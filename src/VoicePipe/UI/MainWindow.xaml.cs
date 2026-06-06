@@ -193,6 +193,13 @@ public partial class MainWindow : Window
         Serilog.Log.Information("热键已重置为未设置");
     }
 
+    // ── VB-Cable 驱动修复 ──
+    private async void RepairVbCable_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm) return;
+        await vm.RepairVbCableAsync();
+    }
+
     // ── 首次使用引导："知道了"关闭并持久化 ──
     private void GuideGotIt_Click(object sender, RoutedEventArgs e)
     {

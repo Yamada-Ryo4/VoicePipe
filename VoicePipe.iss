@@ -1,11 +1,11 @@
-﻿; ══════════════════════════════════════════════════════════════════
+; ══════════════════════════════════════════════════════════════════
 ; VoicePipe.iss — Inno Setup 6 打包脚本
 ; 输出：e:\Documents\Voicepipe\Output\VoicePipeSetup.exe
 ; 用户可在安装向导中自由选择安装目录
 ; ══════════════════════════════════════════════════════════════════
 
 #define AppName      "VoicePipe"
-#define AppVersion   "1.2.18"
+#define AppVersion   "1.2.19"
 #define AppPublisher "Yamada Ryo"
 #define AppExeName   "VoicePipe.exe"
 #define AppId        "{{B4F2A3C1-E71D-4B8A-9D5F-A1C23E45F678}"
