@@ -962,6 +962,17 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public async Task RepairVbCableAsync()
     {
+        // ★ 先刷新检测：如果 VB-Cable 正常则无需修复
+        IsCableAvailable = VirtualMicWriter.IsCableInputAvailable();
+        if (IsCableAvailable)
+        {
+            MessageBox.Show(
+                (Application.Current.TryFindResource("StrCableOk") as string
+                 ?? "VB-Cable 驱动状态正常，无需修复。"),
+                "VoicePipe", MessageBoxButton.OK, MessageBoxImage.Information);
+            Serilog.Log.Information("RepairVbCable: VB-Cable 正常，无需修复");
+            return;
+        }
         // 1. 查找安装包自带的 VB-Cable 安装器
         string appDir = AppContext.BaseDirectory;
         string setupExe = System.IO.Path.Combine(appDir, "vbcable", "VBCABLE_Setup_x64.exe");
