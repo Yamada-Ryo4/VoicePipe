@@ -16,6 +16,11 @@ public class MicCapturer : IDisposable
     private bool _disposed;
     private readonly object _sync = new(); // ★ 保护 _capture/_device，防止后台初始化与 Stop 并发竞态 (B3)
 
+    // ★ 世代计数器：每次 Start() 时递增，Stop() 也递增。
+    // Task.Run 拿到锁后检查世代号是否与启动时一致，
+    // 不一致说明期间有人调了 Stop() 或新的 Start()，丢弃本次初始化结果。
+    private int _generation;
+
     // ★ 当前正在捕获的设备 ID（启动后由后台线程赋值，主线程读）。
     // PipelineManager 据此判断启动新管线时是否还在采同一个麦克风，能否跳过整次拆建。
     private volatile string? _currentDeviceId;
@@ -32,24 +37,38 @@ public class MicCapturer : IDisposable
     /// <summary>在后台线程上初始化并启动 WASAPI 捕获，避免阻塞 UI 线程。</summary>
     public void Start(string deviceId)
     {
-        Stop();
+        int myGeneration;
+        lock (_sync)
+        {
+            Stop(); // 先停掉当前的
+            myGeneration = ++_generation; // 记录本次世代号
+        }
 
         // 在 MTA 线程中做 WASAPI 初始化
         Task.Run(() =>
         {
+            WasapiCapture? cap = null;
+            MMDevice? dev = null;
             try
             {
+                // 先在锁外做耗时的 COM 初始化（避免长时间持锁）
+                using var enumerator = new MMDeviceEnumerator();
+                dev = enumerator.GetDevice(deviceId);
+                cap = new WasapiCapture(dev) { ShareMode = AudioClientShareMode.Shared };
+
                 lock (_sync)
                 {
-                    if (_disposed) return; // 已释放则不再初始化
-
-                    using var enumerator = new MMDeviceEnumerator();
-                    _device = enumerator.GetDevice(deviceId);
-
-                    _capture = new WasapiCapture(_device)
+                    // ★ 世代检查：若期间调了 Stop() 或新的 Start()，世代号已变，丢弃本次结果
+                    if (_disposed || _generation != myGeneration)
                     {
-                        ShareMode = AudioClientShareMode.Shared,
-                    };
+                        Serilog.Log.Information("MicCapturer: 初始化被取消（世代变更），丢弃 {Id}", deviceId);
+                        try { cap.Dispose(); } catch { }
+                        try { dev.Dispose(); } catch { }
+                        return;
+                    }
+
+                    _device = dev;
+                    _capture = cap;
 
                     _capture.DataAvailable += OnDataAvailable;
                     _capture.RecordingStopped += (_, e) =>
@@ -72,7 +91,9 @@ public class MicCapturer : IDisposable
             catch (Exception ex)
             {
                 Serilog.Log.Error(ex, "MicCapturer: 初始化失败");
-                Stop();
+                try { cap?.Dispose(); } catch { }
+                try { dev?.Dispose(); } catch { }
+                lock (_sync) { if (_generation == myGeneration) { _capture = null; _device = null; } }
             }
         });
     }
@@ -138,6 +159,7 @@ public class MicCapturer : IDisposable
     {
         lock (_sync)
         {
+            _generation++; // ★ 使任何正在进行的 Task.Run 世代失效
             if (_capture != null)
             {
                 try
