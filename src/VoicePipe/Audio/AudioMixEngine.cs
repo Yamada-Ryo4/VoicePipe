@@ -168,9 +168,6 @@ public class AudioMixEngine : IWaveProvider, IDisposable
         }
     }
 
-    // 软限幅阈值放宽到 -0.5 dBFS (0.944)，只做极限防爆音，不压制正常动态
-    private const float LimiterThreshold = 0.944f;
-
     // IWaveProvider 输出格式：48000Hz / 2ch / Float32（全管线统一采样率）
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(AudioFormat.SampleRate, AudioFormat.Channels);
 
@@ -325,13 +322,21 @@ public class AudioMixEngine : IWaveProvider, IDisposable
 
     // --- 信号处理 ---
 
+    // 软限幅：低于阈值完全透传（保留冲击感），超过阈值用 tanh 曲线压缩。
+    // 阈值 0.85（-1.4 dBFS），knee=0.15 控制曲线柔软度。
+    // 数学保证：输出严格 ≤ ±1.0，即使输入达到 ±3.0 或更大。
+    //   output = sign * (thr + (1-thr) * tanh(excess / knee))
+    //   极限：excess→∞ 时 tanh→1，output → sign * (thr + 1-thr) = sign * 1.0
+    private const float LimiterThreshold = 0.85f;
+    private const float LimiterKnee = 0.15f;
+
     private static float SoftLimit(float x)
     {
         float abs = MathF.Abs(x);
         if (abs <= LimiterThreshold) return x;
         float sign = x > 0 ? 1f : -1f;
         float excess = abs - LimiterThreshold;
-        return sign * (LimiterThreshold + MathF.Tanh(excess) * (1f - LimiterThreshold));
+        return sign * (LimiterThreshold + (1f - LimiterThreshold) * MathF.Tanh(excess / LimiterKnee));
     }
 
     /// <summary>
