@@ -354,9 +354,18 @@ public partial class MainViewModel : ObservableObject
 
         if (proc == null)
         {
-            // Req 5.6：上次的音频源未在产生音频（不在列表中）
-            StatusText = Application.Current.TryFindResource("StrAutoStartNoSource") as string
-                         ?? "Last audio source not found — pipeline not started";
+            // ★ 上次的音频源未找到（常见于强制重启后应用还没打开）
+            Serilog.Log.Information(
+                "TryAutoStartPipeline: 上次的音频源 '{Name}' 未找到", _settings.LastAppProcessName);
+
+            if (mic != null)
+            {
+                SelectedMic = mic;
+                // ★ 进程找不到时，不管上次是完整运行还是直通，都直接恢复麦克风直通
+                // 麦克风直通不依赖音频源进程，能开就开，比干等着 Idle 体验好
+                Serilog.Log.Information("TryAutoStartPipeline: 恢复麦克风直通（无音频源）");
+                _ = RestorePassthroughWithoutSourceAsync(mic.Id);
+            }
             return;
         }
         if (mic == null)
@@ -388,6 +397,28 @@ public partial class MainViewModel : ObservableObject
             // MicPassthrough 此时应已被构造函数恢复为 true（持久化勾选）
             // → StopPipeline 会走 MicPassthrough 分支，调 StopAppOnly 进入直通
             await StopPipelineCommand.ExecuteAsync(null);
+        }
+    }
+
+    /// <summary>
+    /// 无音频源进程时直接恢复麦克风直通（用于非正常重启后的直通态恢复）。
+    /// 绕过 StartPipeline 对 SelectedProcess 的要求，直接调 PipelineManager.StartMicPassthroughAsync。
+    /// </summary>
+    private async Task RestorePassthroughWithoutSourceAsync(string micId)
+    {
+        try
+        {
+            PeakMonitor.SetRunningMic(micId);
+            await _pipeline.StartMicPassthroughAsync(micId);
+            _isMicPassthroughActive = true;
+            IsRunning = false; // 直通不算"混音中"，保持 UI 显示停止状态
+            StatusText = Application.Current.TryFindResource("StrMicPassthrough") as string
+                         ?? "麦克风直通中";
+            Serilog.Log.Information("TryAutoStartPipeline: 麦克风直通恢复成功");
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "TryAutoStartPipeline: 恢复麦克风直通失败");
         }
     }
 

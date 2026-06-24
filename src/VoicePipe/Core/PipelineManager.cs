@@ -214,6 +214,60 @@ public class PipelineManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// 直接进入麦克风直通状态，无需音频源进程。
+    /// 仅初始化 Writer（VB-Cable）+ MicCapturer，不启动 LoopbackCapturer。
+    /// 用于非正常重启后恢复直通：上次是直通态，但上次的 App 还没打开。
+    /// </summary>
+    public async Task StartMicPassthroughAsync(string micId)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            bool reuseWriter = _writer != null && _writer.IsAlive;
+            bool reuseMic = _micCapture != null && _micCapture.IsAlive
+                            && string.Equals(_micCapture.CurrentDeviceId, micId, StringComparison.Ordinal);
+
+            await Task.Run(() =>
+            {
+                PurgeDeadSessions();
+                if (!reuseWriter) { _writer?.Stop(); _writer = null; }
+                if (!reuseMic)   { _micCapture?.Dispose(); _micCapture = null; }
+            });
+
+            _currentPid = 0;
+            foreach (var capturer in _loopbackCache.Values)
+                capturer.Paused = true;
+
+            if (!reuseWriter) _mixer.Reset();
+
+            if (!reuseWriter)
+            {
+                var writer = new VirtualMicWriter();
+                await Task.Run(() => writer.Initialize(_mixer));
+                _writer = writer;
+            }
+            _mixer.VbCableActive = true;
+
+            if (!reuseMic)
+            {
+                _micCapture = new MicCapturer();
+                _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
+                _micCapture.Start(micId);
+            }
+
+            _monitor ??= new MonitorOutput(_mixer);
+            _monitor.TargetDeviceId = _monitorDeviceId;
+            if (_mixer.MonitorEnabled) _monitor.EnsureStarted();
+
+            Serilog.Log.Information("PipelineManager: 麦克风直通已启动（无音频源）Mic={Mic}", micId);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task StopAsync()
     {
         await _gate.WaitAsync();
