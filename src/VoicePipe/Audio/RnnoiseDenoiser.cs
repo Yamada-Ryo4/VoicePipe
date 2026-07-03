@@ -34,7 +34,7 @@ public sealed class RnnoiseDenoiser : IDisposable
     private IntPtr _state;
     private volatile bool _enabled;
     private bool _available;     // 原生库可用
-    private bool _disposed;
+    private volatile bool _disposed; // ★ volatile：防止音频线程读到旧缓存值
 
     // 48k 单声道帧处理 FIFO：
     // _inAccum 累积未满 480 的输入；_wetPending 存放已降噪、待输出的样本；
@@ -96,12 +96,15 @@ public sealed class RnnoiseDenoiser : IDisposable
     {
         if (!_enabled || !_available || _disposed || len <= 0) return;
 
-        int frames = len / 2; // 立体声帧数
-        if (frames == 0) return;
+        // ★ 将 _state snap 到局部变量：避免检查完 _disposed=false 后另一个线程调了 Dispose()，
+        //   _state 被 rnnoise_destroy 后置 IntPtr.Zero，导致本方法用后释放（UAF）触发 0xC0000005。
+        //   snap 过来后即使 Dispose 在后续线程运行，本次调用仍用持有的实例，除了多处一个帧的延迟，不会崩溃。
+        var state = _state;
+        if (state == IntPtr.Zero) return;
 
         try
         {
-            ProcessStereo48kCore(buffer, len, frames);
+            ProcessStereo48kCore(buffer, len, len / 2, state);
         }
         catch (Exception ex)
         {
@@ -112,7 +115,7 @@ public sealed class RnnoiseDenoiser : IDisposable
         }
     }
 
-    private void ProcessStereo48kCore(float[] buffer, int len, int frames)
+    private void ProcessStereo48kCore(float[] buffer, int len, int frames, IntPtr state)
     {
         // 1) 立体声 → 单声道（求平均）
         var mono = RentMono(frames);
@@ -120,7 +123,7 @@ public sealed class RnnoiseDenoiser : IDisposable
             mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f;
 
         // 2) 按 480 帧送 RNNoise（干湿混合），原地把 mono 替换为输出样本
-        DenoiseInPlace(mono, frames);
+        DenoiseInPlace(mono, frames, state);
 
         // 3) 单声道 → 立体声，写回 buffer
         for (int i = 0; i < frames; i++)
@@ -131,10 +134,10 @@ public sealed class RnnoiseDenoiser : IDisposable
         }
     }
 
-    // ── RNNoise 帧处理（FIFO 模型）：原地把 mono48k 的 [0,len) 替换为“干湿混合后”的样本。
+    // ── RNNoise 帧处理（FIFO 模型）：原地把 mono48k 的 [0,len) 替换为"干湿混合后"的样本。
     // 输出 = 之前已处理但未取走的样本 + 本次新处理的样本，长度恒等于 len。
-    // 干声平行 FIFO 保证混合时干湿严格同延迟，避免梳状滤波。──
-    private unsafe void DenoiseInPlace(float[] data, int len)
+    // 干声平行 FIFO 保证混合时干湿严格同延迟，避免梳状滤波（金属声）。──
+    private unsafe void DenoiseInPlace(float[] data, int len, IntPtr state)
     {
         // 1) 把本次输入累积，凑满 480 就处理一帧：
         //    先把原始帧存入干声 FIFO，再降噪并把结果存入湿声 FIFO（两者同索引）。
@@ -156,7 +159,7 @@ public sealed class RnnoiseDenoiser : IDisposable
                 // 湿声：RNNoise 原地处理（期望 16-bit 量级）
                 for (int k = 0; k < FrameSize; k++) _inAccum[k] *= Scale;
                 fixed (float* p = _inAccum)
-                    rnnoise_process_frame(_state, p, p);
+                    rnnoise_process_frame(state, p, p);
                 for (int k = 0; k < FrameSize; k++) _inAccum[k] *= ScaleInv;
 
                 Array.Copy(_inAccum, 0, _wetPending, _pendingCount, FrameSize);
