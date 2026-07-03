@@ -13,6 +13,7 @@ public partial class App : Application
         DispatcherUnhandledException += (s, args) =>
         {
             Log.Fatal(args.Exception, "未捕获的 UI 线程异常");
+            Log.CloseAndFlush(); // ★ 崩溃时立即刷入磁盘
             MessageBox.Show(
                 $"VoicePipe 遇到错误：\n\n{args.Exception.Message}\n\n详细信息已记录到日志文件。",
                 "VoicePipe 错误", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -23,6 +24,7 @@ public partial class App : Application
         {
             if (args.ExceptionObject is Exception ex)
                 Log.Fatal(ex, "未捕获的非UI线程异常");
+            Log.CloseAndFlush(); // ★ 后台线程崩溃时立即刷入磁盘
         };
 
         // 初始化 Serilog
@@ -31,7 +33,10 @@ public partial class App : Application
             .WriteTo.File(
                 System.IO.Path.Combine(AppContext.BaseDirectory, "logs", "voicepipe.log"),
                 rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 7)
+                retainedFileCountLimit: 7,
+                buffered: true, // ★ 开启内存缓冲，积攒一定量再写入，避免频繁刷盘毁固态
+                flushToDiskInterval: TimeSpan.FromSeconds(15), // ★ 最多 15 秒刷一次（而不是每条都刷或 1 秒刷）
+                shared: true)
             .WriteTo.Sink(InMemoryLogSink.Instance)
             .CreateLogger();
 

@@ -182,16 +182,18 @@ public class LoopbackCapturer : IDisposable
 
                 // 读取所有可用帧
                 uint packetSize;
-                captureClient.GetNextPacketSize(out packetSize);
+                int hr = captureClient.GetNextPacketSize(out packetSize);
+                if (hr < 0) Marshal.ThrowExceptionForHR(hr);
 
                 while (packetSize > 0 && !token.IsCancellationRequested)
                 {
-                    captureClient.GetBuffer(
+                    hr = captureClient.GetBuffer(
                         out IntPtr dataPtr,
                         out uint numFrames,
                         out uint flags,
                         out ulong devicePos,
                         out ulong qpcPos);
+                    if (hr < 0) Marshal.ThrowExceptionForHR(hr);
 
                     const uint AUDCLNT_BUFFERFLAGS_SILENT = 0x2;
                     bool isSilent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
@@ -200,8 +202,10 @@ public class LoopbackCapturer : IDisposable
                     // 但跳过内存拷贝和事件触发，避免空转开销。
                     if (_paused)
                     {
-                        captureClient.ReleaseBuffer(numFrames);
-                        captureClient.GetNextPacketSize(out packetSize);
+                        hr = captureClient.ReleaseBuffer(numFrames);
+                        if (hr < 0) Marshal.ThrowExceptionForHR(hr);
+                        hr = captureClient.GetNextPacketSize(out packetSize);
+                        if (hr < 0) Marshal.ThrowExceptionForHR(hr);
                         continue;
                     }
 
@@ -230,10 +234,12 @@ public class LoopbackCapturer : IDisposable
                         Array.Clear(samples, 0, sampleCount);
                     }
 
-                    captureClient.ReleaseBuffer(numFrames);
+                    hr = captureClient.ReleaseBuffer(numFrames);
+                    if (hr < 0) Marshal.ThrowExceptionForHR(hr);
                     // ★ 携带有效样本数，消费方只读 Count 个，不读整个复用缓冲
                     SamplesAvailable?.Invoke(this, (samples, sampleCount));
-                    captureClient.GetNextPacketSize(out packetSize);
+                    hr = captureClient.GetNextPacketSize(out packetSize);
+                    if (hr < 0) Marshal.ThrowExceptionForHR(hr);
                 }
             }
         }
