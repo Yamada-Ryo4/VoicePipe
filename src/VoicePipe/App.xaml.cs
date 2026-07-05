@@ -1,4 +1,5 @@
 using Serilog;
+using System.Threading;
 using System.Windows;
 using VoicePipe.Bootstrapper;
 using VoicePipe.Sinks;
@@ -7,8 +8,19 @@ namespace VoicePipe;
 
 public partial class App : Application
 {
+    // ★ 单实例互斥锁：防止更新安装 / 开机自启时同时跑多个 VoicePipe
+    private static Mutex? _singleInstanceMutex;
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 单实例检查
+        _singleInstanceMutex = new Mutex(true, "VoicePipe_SingleInstance_B4F2A3C1", out bool createdNew);
+        if (!createdNew)
+        {
+            MessageBox.Show("VoicePipe 已在运行中。", "VoicePipe", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown(0);
+            return;
+        }
         // 全局未捕获异常处理：防止静默闪退
         DispatcherUnhandledException += (s, args) =>
         {

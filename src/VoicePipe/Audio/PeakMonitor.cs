@@ -2,6 +2,8 @@ using NAudio.CoreAudioApi;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
 namespace VoicePipe.Audio;
@@ -57,6 +59,22 @@ public static class PeakMonitor
     private static MMDeviceEnumerator? _cachedEnumerator;
     private static MMDevice? _cachedRenderDevice;
     private static readonly Dictionary<string, MMDevice> _cachedMicDevices = new();
+
+    // ★ 反射访问 NAudio SessionCollection.audioSessionEnumerator（私有 COM 字段）。
+    //   .NET 缓存 FieldInfo，避免每次都做类型查找。
+    //   背景：NAudio 的 AudioSessionManager.RefreshSessions() 每次都调用
+    //   IAudioSessionManager2.GetSessionEnumerator() 创建一个新的 COM 枚举器 RCW，
+    //   直接覆盖 this.sessions 字段，从不对旧枚举器调用 Marshal.ReleaseComObject。
+    //   SessionCollection 也不实现 IDisposable。结果是旧 RCW 只能等 GC 终结，
+    //   实际上 COM 引用计数一直挂着，Windows Audio 服务 (audiodg) 内存随时间无限增长
+    //   （用户实测 7GB）。这里在每次 RefreshSessions 前手动释放上一轮的枚举器，
+    //   把每小时泄漏的约 54000 个 COM 引用清零。
+    private static readonly FieldInfo? _sessionEnumeratorField =
+        typeof(NAudio.CoreAudioApi.SessionCollection)
+            .GetField("audioSessionEnumerator", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? _sessionsField =
+        typeof(NAudio.CoreAudioApi.AudioSessionManager)
+            .GetField("sessions", BindingFlags.Instance | BindingFlags.NonPublic);
 
     // 默认渲染设备变更检测节流：用 Environment.TickCount64 记录上次检查时间，
     // 约每 1s 比对一次默认设备 ID，避免每帧重取设备对象（保留性能优化意图）。
@@ -132,6 +150,13 @@ public static class PeakMonitor
 
                     // (c) ★ 关键修复：每轮刷新会话枚举，使首轮后新建的会话可见。
                     //     NAudio 的 Sessions 只在 RefreshSessions() 时重取快照，缓存设备不刷新就读不到新会话。
+                    //
+                    //     ★★★ COM 内存泄漏修复 ★★★
+                    //     RefreshSessions() 内部每次都 GetSessionEnumerator() 创建新的 COM 枚举器，
+                    //     直接覆盖旧 sessions 字段，从不 ReleaseComObject。15fps × 3600s = 54000 RCW/小时，
+                    //     全部挂在 Windows Audio (audiodg) 进程上，用户实测内存涨到 7GB。
+                    //     这里在 RefreshSessions 之前把旧 sessions.audioSessionEnumerator 释放掉。
+                    ReleaseStaleSessionEnumerator(_cachedRenderDevice.AudioSessionManager);
                     _cachedRenderDevice.AudioSessionManager.RefreshSessions();
                     var sessions = _cachedRenderDevice.AudioSessionManager.Sessions;
                     // 本轮已写过的 PID：用于在同一轮内对同进程的多个会话取最大值，
@@ -324,8 +349,44 @@ public static class PeakMonitor
         }
     }
 
+    /// <summary>
+    /// 在 RefreshSessions() 之前释放上一轮缓存的 <see cref="NAudio.CoreAudioApi.SessionCollection"/>
+    /// 内部持有的 <c>IAudioSessionEnumerator</c> COM 对象，避免 RCW 泄漏到 audiodg 进程。
+    ///
+    /// 为什么需要：NAudio 的 AudioSessionManager.RefreshSessions() 每次都创建新的枚举器 RCW，
+    /// 直接覆盖 sessions 字段，旧 RCW 只能等 GC 终结，COM 引用计数一直挂着，Windows Audio
+    /// 服务内存随时间无限增长。本方法通过反射读取并主动 ReleaseComObject，把泄漏清零。
+    /// </summary>
+    private static void ReleaseStaleSessionEnumerator(NAudio.CoreAudioApi.AudioSessionManager mgr)
+    {
+        // 反射查找失败时静默跳过 —— 不影响功能，只是无法回收（极少见，NAudio 字段名变了才会发生）
+        if (_sessionsField is null || _sessionEnumeratorField is null) return;
+        try
+        {
+            if (_sessionsField.GetValue(mgr) is NAudio.CoreAudioApi.SessionCollection oldSessions)
+            {
+                if (_sessionEnumeratorField.GetValue(oldSessions) is object enumObj)
+                {
+                    // 释放底层 IAudioSessionEnumerator COM 引用。
+                    // 释放后 RCW 失效，后续即使意外访问也只是返回 0/空，不会崩（且我们在 RefreshSessions 后才用新的 sessions）。
+                    Marshal.ReleaseComObject(enumObj);
+                }
+            }
+        }
+        catch
+        {
+            // 反射/COM 释放失败不影响主轮询流程；最坏情况是这一轮不回收，下轮再试。
+        }
+    }
+
     private static void DisposeCachedDevices()
     {
+        // ★ 退出/异常重建时释放最后一轮残留的 session enumerator COM 引用，
+        //   避免 Stop 后 audiodg 仍持有引用直到 GC 终结（可能数分钟）。
+        if (_cachedRenderDevice is not null)
+        {
+            try { ReleaseStaleSessionEnumerator(_cachedRenderDevice.AudioSessionManager); } catch { }
+        }
         try { _cachedRenderDevice?.Dispose(); } catch { }
         _cachedRenderDevice = null;
         DisposeCachedMics();
