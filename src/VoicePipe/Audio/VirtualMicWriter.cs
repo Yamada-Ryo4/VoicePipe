@@ -80,10 +80,8 @@ public class VirtualMicWriter : IDisposable
                     {
                         if (logFound)
                             Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input（缓存命中） → {Name}", dev.FriendlyName);
-                        // enumerator 不能 Dispose（dev 持有它的内部 COM 引用），交给调用方间接管理；
-                        // 改为 GC：MMDeviceEnumerator 的 finalizer 会清理。注：这里 Dispose enumerator
-                        // 才安全，因为 NAudio 的 MMDevice 各自持有独立 COM 引用，与 enumerator 解耦。
-                        try { enumerator.Dispose(); } catch { }
+                        // enumerator 统一交给下方 finally Dispose（NAudio 的 MMDevice 持有独立 COM 引用，
+                        // 与 enumerator 解耦，Dispose enumerator 安全）。这里只 return dev。
                         return dev;
                     }
                     try { dev?.Dispose(); } catch { }

@@ -21,25 +21,10 @@ public partial class App : Application
             Shutdown(0);
             return;
         }
-        // 全局未捕获异常处理：防止静默闪退
-        DispatcherUnhandledException += (s, args) =>
-        {
-            Log.Fatal(args.Exception, "未捕获的 UI 线程异常");
-            Log.CloseAndFlush(); // ★ 崩溃时立即刷入磁盘
-            MessageBox.Show(
-                $"VoicePipe 遇到错误：\n\n{args.Exception.Message}\n\n详细信息已记录到日志文件。",
-                "VoicePipe 错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            args.Handled = true;
-        };
 
-        AppDomain.CurrentDomain.UnhandledException += (s, args) =>
-        {
-            if (args.ExceptionObject is Exception ex)
-                Log.Fatal(ex, "未捕获的非UI线程异常");
-            Log.CloseAndFlush(); // ★ 后台线程崩溃时立即刷入磁盘
-        };
-
-        // 初始化 Serilog
+        // ★ 先初始化 Serilog，再注册异常处理器。
+        //   原顺序是先注册 handler 再初始化 Logger，若 OnStartup 极早期（handler 已注册、Logger 未赋值）抛异常，
+        //   Log.Fatal 会写入默认的 SilentLogger（什么都不写），日志丢失。现在 Logger 先就绪，handler 才能正常记日志。
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .WriteTo.File(
@@ -52,6 +37,27 @@ public partial class App : Application
             .CreateLogger();
 
         Log.Information("VoicePipe 启动");
+
+        // 全局未捕获异常处理：防止静默闪退
+        DispatcherUnhandledException += (s, args) =>
+        {
+            Log.Fatal(args.Exception, "未捕获的 UI 线程异常");
+            Log.CloseAndFlush(); // ★ 崩溃时立即刷入磁盘
+            MessageBox.Show(
+                $"VoicePipe 遇到错误：\n\n{args.Exception.Message}\n\n详细信息已记录到日志文件。",
+                "VoicePipe 错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            args.Handled = true;
+            // ★ OnExplicitShutdown 模式下，仅设 Handled=true 进程不会退出（无窗口、Mutex 不释放，
+            //   下次启动被判"已在运行中"）。显式 Shutdown(1) 终止进程并释放 Mutex。
+            Shutdown(1);
+        };
+
+        AppDomain.CurrentDomain.UnhandledException += (s, args) =>
+        {
+            if (args.ExceptionObject is Exception ex)
+                Log.Fatal(ex, "未捕获的非UI线程异常");
+            Log.CloseAndFlush(); // ★ 后台线程崩溃时立即刷入磁盘
+        };
 
         base.OnStartup(e);
 

@@ -36,6 +36,14 @@ public sealed class RnnoiseDenoiser : IDisposable
     private bool _available;     // 原生库可用
     private volatile bool _disposed; // ★ volatile：防止音频线程读到旧缓存值
 
+    // ★ process_frame / destroy 互斥锁。
+    //   背景：v1.2.25 用 `var state = _state` snap 试图防 UAF，但 snap 复制的是指针值（地址），
+    //   另一线程 rnnoise_destroy 后那块 native 内存已 free，局部变量持有的仍是已释放地址 → UAF → 0xC0000005。
+    //   snap 只防"字段被置 null 后局部也变 null"，不防 native free。
+    //   现改为 lock 互斥：音频线程持锁调 process_frame，Dispose 持锁调 destroy，二者不可能并发。
+    //   持锁期间 process_frame 是 native 调用（~2-5ms @48k/480 帧），Dispose 在退出线程短暂等待可接受。
+    private readonly object _stateLock = new();
+
     // 48k 单声道帧处理 FIFO：
     // _inAccum 累积未满 480 的输入；_wetPending 存放已降噪、待输出的样本；
     // _dryPending 与 _wetPending 严格同步，存放对应帧“未经降噪的原始样本”，用于干湿混合。
@@ -96,15 +104,19 @@ public sealed class RnnoiseDenoiser : IDisposable
     {
         if (!_enabled || !_available || _disposed || len <= 0) return;
 
-        // ★ 将 _state snap 到局部变量：避免检查完 _disposed=false 后另一个线程调了 Dispose()，
-        //   _state 被 rnnoise_destroy 后置 IntPtr.Zero，导致本方法用后释放（UAF）触发 0xC0000005。
-        //   snap 过来后即使 Dispose 在后续线程运行，本次调用仍用持有的实例，除了多处一个帧的延迟，不会崩溃。
-        var state = _state;
-        if (state == IntPtr.Zero) return;
-
+        // ★ v1.2.25 的 snap 方案不能防 UAF（见 _stateLock 注释）。
+        //   现用 lock 与 Dispose 互斥：整个 process_frame 调用链持锁，Dispose 持锁 destroy，
+        //   二者不可能并发。持锁期间是 native process_frame（~2-5ms @48k/480 帧），
+        //   Dispose 在退出线程短暂等待可接受（退出非热路径）。
+        //   注意：锁内不能再调本类其它会尝试重入 _stateLock 的方法（Monitor 不可重入会死锁），
+        //   ProcessStereo48kCore / DenoiseInPlace 都不持锁，安全。
         try
         {
-            ProcessStereo48kCore(buffer, len, len / 2, state);
+            lock (_stateLock)
+            {
+                if (_disposed || _state == IntPtr.Zero) return;
+                ProcessStereo48kCore(buffer, len, len / 2, _state);
+            }
         }
         catch (Exception ex)
         {
@@ -210,10 +222,16 @@ public sealed class RnnoiseDenoiser : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        if (_state != IntPtr.Zero)
+        // ★ 持锁 destroy，与 ProcessStereo48k 的 process_frame 互斥。
+        //   等待音频线程完成当前帧处理（最多 ~2-5ms）后再 destroy，彻底消除 UAF。
+        //   Dispose 在退出/重置线程调用，等待可接受；音频实时线程持锁期间不被 Dispose 打断。
+        lock (_stateLock)
         {
-            try { rnnoise_destroy(_state); } catch { }
-            _state = IntPtr.Zero;
+            if (_state != IntPtr.Zero)
+            {
+                try { rnnoise_destroy(_state); } catch { }
+                _state = IntPtr.Zero;
+            }
         }
     }
 

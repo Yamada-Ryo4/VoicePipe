@@ -68,6 +68,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _statusText = "Ready";
     [ObservableProperty] private bool _isCableAvailable;
     [ObservableProperty] private bool _micPassthrough;
+
+    // ★ RefreshAllAsync 重入守卫：_refreshTimer.Tick 用 async void lambda，
+    //   若上一轮 2s 内未完成又触发，会并发修改 Processes/MicDevices 集合。用此标志跳过重叠调用。
+    private bool _refreshing;
     [ObservableProperty] private bool _isMicMuted;
     private bool _isMicPassthroughActive; // 当前是否处于麦克风直通状态
 
@@ -267,6 +271,11 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task RefreshAllAsync()
     {
+        // ★ 重入守卫：2s 内未完成又触发时跳过，避免并发修改 Processes/MicDevices 集合
+        if (_refreshing) return;
+        _refreshing = true;
+        try
+        {
         // ★ 在后台线程执行所有 COM 操作
         var (processList, micList, cableAvail, renderList) = await Task.Run(() =>
         {
@@ -323,6 +332,8 @@ public partial class MainViewModel : ObservableObject
                                     ?? MonitorDevices.FirstOrDefault();
 
         TryAutoStartPipeline();
+        }
+        finally { _refreshing = false; }
     }
 
     /// <summary>

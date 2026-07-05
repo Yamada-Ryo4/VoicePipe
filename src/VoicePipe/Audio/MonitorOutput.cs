@@ -151,12 +151,10 @@ public sealed class MonitorOutput : IDisposable
     // 必须在持有 _sync 锁的前提下调用。
     private void StopLocked()
     {
-        try
-        {
-            _out?.Stop();
-            _out?.Dispose();
-        }
-        catch { }
+        // ★ Stop / Dispose 拆成两个 try：Stop 抛异常时 Dispose 仍会执行，
+        //   避免 _out=null 清引用后 WasapiOut COM 资源泄漏（等 GC 终结不可靠）。
+        try { _out?.Stop(); } catch { }
+        try { _out?.Dispose(); } catch { }
         _out = null;
 
         try { _device?.Dispose(); } catch { }

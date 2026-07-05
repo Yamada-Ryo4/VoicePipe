@@ -210,6 +210,12 @@ public static class PeakMonitor
                 }
                 catch
                 {
+                    // ★ 异常重建前也释放上一轮的 session enumerator，避免 catch 路径漏掉 COM 回收。
+                    //   （DisposeCachedDevices 已调，但这里是 App 分支的 catch，_cachedRenderDevice 还在）
+                    if (_cachedRenderDevice is not null)
+                    {
+                        try { ReleaseStaleSessionEnumerator(_cachedRenderDevice.AudioSessionManager); } catch { }
+                    }
                     try { _cachedRenderDevice?.Dispose(); } catch { }
                     _cachedRenderDevice = null;
                 }

@@ -243,8 +243,6 @@ public class LoopbackCapturer : IDisposable
                 }
             }
         }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception) { throw; }
         finally
         {
             // ★ 必须按正确顺序释放所有 COM 对象，否则 Windows 认为旧会话仍活着
