@@ -52,6 +52,17 @@ public static class PeakMonitor
         set => _pollIntervalMs = value < 33 ? 33 : value; // 下限 33ms，防止设成 0 空转
     }
 
+    // ★ RefreshSessions 节流：会话列表（哪些 app 在发声）变化频率极低（仅 app 启停音频时变），
+    //   没必要每轮（15fps）都 RefreshSessions + 重新枚举全部 session。
+    //   节流到约 1s Refresh 一次，峰值数值（MasterPeakValue）仍每轮实时读，动态音量条不受影响。
+    //   新启动的 app 最多晚 1s 出现在音量条上（列表本身在 ViewModel 里就是 2s 刷一次，更慢，无感知）。
+    private static long _lastRefreshTick;
+    private const int RefreshIntervalMs = 1000;
+
+    // ★ 复用临时集合，避免每轮（15fps）分配 HashSet + Dictionary（审查 P2，GC 热点）。
+    private static readonly HashSet<int> _seenThisRoundReuse = new();
+    private static readonly Dictionary<string, float> _nameRoundReuse = new(StringComparer.OrdinalIgnoreCase);
+
     // 静默捕获会话：只为唤醒设备硬件 peak meter，数据直接丢弃
     private static readonly ConcurrentDictionary<string, WasapiCapture> _micListeners = new();
 
@@ -120,6 +131,8 @@ public static class PeakMonitor
         // ★ 重置 PID→名字 映射缓存，下次 Start 立即重新快照（不复用上次会话的陈旧映射）
         _cachedPidName = null;
         _lastPidNameTick = 0;
+        // ★ 重置 RefreshSessions 节流，下次 Start 立即 Refresh 一次
+        _lastRefreshTick = 0;
     }
 
     private static async Task MonitorLoop()
@@ -156,22 +169,28 @@ public static class PeakMonitor
                         }
                     }
 
-                    // (c) ★ 关键修复：每轮刷新会话枚举，使首轮后新建的会话可见。
+                    // (c) ★ 会话枚举刷新（节流到约 1s 一次）+ COM 泄漏修复。
                     //     NAudio 的 Sessions 只在 RefreshSessions() 时重取快照，缓存设备不刷新就读不到新会话。
+                    //     但会话列表（哪些 app 在发声）变化频率极低，没必要每轮（15fps）都 Refresh。
+                    //     节流到 1s：峰值数值（MasterPeakValue）仍每轮实时读已有快照，动态音量条不受影响。
+                    //     新 app 最多晚 1s 出现（列表本身 2s 刷一次，更慢，无感知）。
                     //
                     //     ★★★ COM 内存泄漏修复 ★★★
                     //     RefreshSessions() 内部每次都 GetSessionEnumerator() 创建新的 COM 枚举器，
                     //     直接覆盖旧 sessions 字段，从不 ReleaseComObject。15fps × 3600s = 54000 RCW/小时，
                     //     全部挂在 Windows Audio (audiodg) 进程上，用户实测内存涨到 7GB。
                     //     这里在 RefreshSessions 之前把旧 sessions.audioSessionEnumerator 释放掉。
-                    ReleaseStaleSessionEnumerator(_cachedRenderDevice.AudioSessionManager);
-                    _cachedRenderDevice.AudioSessionManager.RefreshSessions();
+                    var nowTickRefresh = Environment.TickCount64;
+                    if (nowTickRefresh - _lastRefreshTick >= RefreshIntervalMs)
+                    {
+                        _lastRefreshTick = nowTickRefresh;
+                        ReleaseStaleSessionEnumerator(_cachedRenderDevice.AudioSessionManager);
+                        _cachedRenderDevice.AudioSessionManager.RefreshSessions();
+                    }
                     var sessions = _cachedRenderDevice.AudioSessionManager.Sessions;
-                    // 本轮已写过的 PID：用于在同一轮内对同进程的多个会话取最大值，
-                    // 而不会被后写的静默会话覆盖成 0（Edge/Apple Music 等多进程/多流 app 关键）。
-                    var seenThisRound = new HashSet<int>();
-                    // 本轮按名字聚合峰值（重建，保证随时间衰减）
-                    var nameRound = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+                    // ★ 复用临时集合，避免每轮分配（15fps × 2 个集合 = 每秒 30 次堆分配 = GC 热点）
+                    _seenThisRoundReuse.Clear();
+                    _nameRoundReuse.Clear();
                     // ★ PID→进程名 映射：节流到约 1s 取一次（快照贵，映射几乎不变）。
                     //   峰值数值仍每轮实时读，动态音量条不受影响。
                     var nowTickName = Environment.TickCount64;
@@ -192,7 +211,7 @@ public static class PeakMonitor
                         float peak = session.AudioMeterInformation.MasterPeakValue;
                         if (peak < 0f) peak = 0f; else if (peak > 1f) peak = 1f;
 
-                        if (seenThisRound.Add(pid))
+                        if (_seenThisRoundReuse.Add(pid))
                         {
                             // 本轮首个会话：直接刷新（保证随时间衰减，不会卡在旧的高值）
                             ProcessPeaks[pid] = peak;
@@ -206,15 +225,15 @@ public static class PeakMonitor
                         // 按名字聚合（取该名字所有出声 PID 的最大值）
                         if (pidName.TryGetValue(pid, out var nm) && !string.IsNullOrEmpty(nm))
                         {
-                            if (!nameRound.TryGetValue(nm, out var nc) || peak > nc)
-                                nameRound[nm] = peak;
+                            if (!_nameRoundReuse.TryGetValue(nm, out var nc) || peak > nc)
+                                _nameRoundReuse[nm] = peak;
                         }
                     }
 
                     // 用本轮结果整体刷新按名字峰值表（移除已消失的名字，避免卡住旧值）
-                    foreach (var kv in nameRound) ProcessPeaksByName[kv.Key] = kv.Value;
+                    foreach (var kv in _nameRoundReuse) ProcessPeaksByName[kv.Key] = kv.Value;
                     foreach (var key in ProcessPeaksByName.Keys.ToList())
-                        if (!nameRound.ContainsKey(key)) ProcessPeaksByName.TryRemove(key, out _);
+                        if (!_nameRoundReuse.ContainsKey(key)) ProcessPeaksByName.TryRemove(key, out _);
                 }
                 catch
                 {
