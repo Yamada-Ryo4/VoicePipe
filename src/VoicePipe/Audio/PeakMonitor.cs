@@ -76,6 +76,14 @@ public static class PeakMonitor
         typeof(NAudio.CoreAudioApi.AudioSessionManager)
             .GetField("sessions", BindingFlags.Instance | BindingFlags.NonPublic);
 
+    // ★ 反射访问 NAudio MMDeviceCollection.mmDeviceCollection（私有 COM 字段）。
+    //   背景：EnumerateAudioEndPoints 每次创建新 MMDeviceCollection（含 IMMDeviceCollection COM RCW），
+    //   不实现 IDisposable，旧 RCW 等 GC 终结 → audiodg 内存持续增长（v1.2.27 修了 session enumerator
+    //   后这是残留的次大泄漏源，用户实测仍有 1GB）。每轮用完手动 ReleaseComObject 释放。
+    private static readonly FieldInfo? _mmDeviceCollectionField =
+        typeof(NAudio.CoreAudioApi.MMDeviceCollection)
+            .GetField("mmDeviceCollection", BindingFlags.Instance | BindingFlags.NonPublic);
+
     // 默认渲染设备变更检测节流：用 Environment.TickCount64 记录上次检查时间，
     // 约每 1s 比对一次默认设备 ID，避免每帧重取设备对象（保留性能优化意图）。
     private static long _lastDeviceCheckTick;
@@ -227,23 +235,31 @@ public static class PeakMonitor
                     var activeIds = new HashSet<string>();
                     for (int i = 0; i < micCol.Count; i++)
                     {
-                        var micId = micCol[i].ID;
+                        // ★ micCol[i] 每次都 new 一个 MMDevice wrapper（含 IMMDevice COM 引用），
+                        //   只取一次，避免重复创建临时 wrapper 泄漏 COM 引用。
+                        using var dev = micCol[i];
+                        var micId = dev.ID;
                         activeIds.Add(micId);
 
                         // ★ 复用缓存的麦克风设备对象
                         if (!_cachedMicDevices.TryGetValue(micId, out var cachedMic))
                         {
+                            // 缓存未命中：把这枚设备存入缓存，但 dev 在 using 末尾会被 Dispose。
+                            // 解决：从原 collection 重新取一个不 Dispose 的存入缓存。
+                            // NAudio MMDevice 各自持有独立 COM 引用，micCol[i] 每次返回新 wrapper，
+                            // 所以这里再取一个给缓存，dev 那个随 using Dispose 掉。
                             cachedMic = micCol[i];
                             _cachedMicDevices[micId] = cachedMic;
-                        }
-                        else
-                        {
-                            micCol[i].Dispose(); // 本次枚举出的新对象不需要，释放
                         }
 
                         // 读取该设备的峰值（读 meter 本身很便宜；无监听且非运行设备会返回 ~0）
                         MicPeaks[micId] = cachedMic.AudioMeterInformation.MasterPeakValue;
                     }
+
+                    // ★ 释放本轮 MMDeviceCollection 内部的 IMMDeviceCollection COM 引用。
+                    //   EnumerateAudioEndPoints 每轮创建新 collection（不实现 IDisposable），
+                    //   旧 RCW 等 GC 终结 → audiodg 内存增长（v1.2.27 修了 session enumerator 后这是残留泄漏源）。
+                    ReleaseMmDeviceCollection(micCol);
 
                     // ★ 按策略调谐静默监听集合（只开需要的，关掉不需要的）
                     ReconcileMicListeners(activeIds);
@@ -382,6 +398,25 @@ public static class PeakMonitor
         catch
         {
             // 反射/COM 释放失败不影响主轮询流程；最坏情况是这一轮不回收，下轮再试。
+        }
+    }
+
+    /// <summary>
+    /// 释放 NAudio <see cref="NAudio.CoreAudioApi.MMDeviceCollection"/> 内部的
+    /// <c>IMMDeviceCollection</c> COM 引用。EnumerateAudioEndPoints 每次创建新 collection
+    /// 但不实现 IDisposable，旧 RCW 等 GC 终结 → audiodg 内存增长。
+    /// </summary>
+    private static void ReleaseMmDeviceCollection(NAudio.CoreAudioApi.MMDeviceCollection col)
+    {
+        if (_mmDeviceCollectionField is null) return;
+        try
+        {
+            if (_mmDeviceCollectionField.GetValue(col) is object comObj)
+                Marshal.ReleaseComObject(comObj);
+        }
+        catch
+        {
+            // 释放失败不影响主轮询。
         }
     }
 
