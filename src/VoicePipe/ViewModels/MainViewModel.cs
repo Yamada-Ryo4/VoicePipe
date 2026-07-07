@@ -973,7 +973,9 @@ public partial class MainViewModel : ObservableObject
         PeakMonitor.SetTargetMic(value?.Id);
 
         if (value != null)
-            Serilog.Log.Information("已选择麦克风: {Name}", value.Name);
+            // ★ 诊断"跳麦克风"bug：记录每次变化的完整信息，便于定位是谁触发的
+            Serilog.Log.Information("已选择麦克风: {Name} (Id={Id}) IsRunning={Run} Passthrough={Pt}",
+                value.Name, value.Id, IsRunning, _isMicPassthroughActive);
         if (IsRunning && value != null && SelectedProcess != null)
             _ = StartPipelineCommand.ExecuteAsync(null);
         // ★ 直通状态下换麦克风：重新走一次 Start → StopAppOnly 路径，让新麦克风生效

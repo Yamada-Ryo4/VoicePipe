@@ -69,6 +69,8 @@ public class MicCapturer : IDisposable
 
                     _device = dev;
                     _capture = cap;
+                    var capturedDeviceId = deviceId;
+                    var capturedGeneration = myGeneration;
 
                     _capture.DataAvailable += OnDataAvailable;
                     _capture.RecordingStopped += (_, e) =>
@@ -77,6 +79,35 @@ public class MicCapturer : IDisposable
                             Serilog.Log.Error(e.Exception, "MicCapturer: 录音停止异常");
                         else
                             Serilog.Log.Information("MicCapturer: 停止");
+
+                        // ★ 自动重连：设备短暂断连（USB/蓝牙抖动）后 WasapiCapture 触发 RecordingStopped。
+                        //   如果不是用户主动 Stop（generation 未变 + 未 Dispose），延迟 2 秒后用原 deviceId 重试。
+                        //   重试期间持续检查 generation，若用户手动切了麦克风就放弃重连。
+                        bool shouldReconnect;
+                        lock (_sync)
+                        {
+                            shouldReconnect = !_disposed && _generation == capturedGeneration;
+                            // 清掉当前 capture 引用，让重连能重建
+                            if (shouldReconnect)
+                            {
+                                _capture = null;
+                                _currentDeviceId = null;
+                            }
+                        }
+                        if (shouldReconnect)
+                        {
+                            Serilog.Log.Warning("MicCapturer: 设备断连，2 秒后自动重连 {Id}", capturedDeviceId);
+                            _ = Task.Run(async () =>
+                            {
+                                await Task.Delay(2000);
+                                lock (_sync)
+                                {
+                                    if (_disposed || _generation != capturedGeneration) return;
+                                }
+                                Serilog.Log.Information("MicCapturer: 正在重连 {Id}", capturedDeviceId);
+                                Start(capturedDeviceId);
+                            });
+                        }
                     };
                     _capture.StartRecording();
                     _currentDeviceId = deviceId; // ★ 记录设备 ID 供复用判断
