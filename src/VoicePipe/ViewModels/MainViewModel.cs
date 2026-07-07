@@ -259,7 +259,9 @@ public partial class MainViewModel : ObservableObject
         }
         else
         {
-            _waveformTimer.Interval = TimeSpan.FromMilliseconds(66);  // 15fps，失焦时也保持流畅
+            // ★ 失焦时大幅降帧省 CPU+GPU。用户看不到画面，没必要 15fps 重绘波形/频谱/音量条。
+            //   500ms（2fps）只够音量条不卡死，波形近似静止——切回来时立刻恢复 20fps。
+            _waveformTimer.Interval = TimeSpan.FromMilliseconds(500); // 2fps
             _refreshTimer.Interval  = TimeSpan.FromSeconds(5);        // 后台时进程列表刷新放慢
             PeakMonitor.PollIntervalMs = 200;                          // 5fps
         }
