@@ -87,6 +87,24 @@ public static class PeakMonitor
         typeof(NAudio.CoreAudioApi.AudioSessionManager)
             .GetField("sessions", BindingFlags.Instance | BindingFlags.NonPublic);
 
+    // ★ 反射访问 NAudio AudioSessionControl 的内部 COM 字段。
+    //   背景：AudioSessionControl.Dispose() 只取消事件通知回调，**不释放底层 COM 引用**
+    //   （IAudioSessionControl / IAudioSessionControl2）。AudioMeterInformation 不实现 IDisposable，
+    //   持有 IAudioMeterInformation COM 也不释放。每个 session 每轮泄漏 3 个 COM 引用，
+    //   一晚上累积到 271MB（v1.2.30 修了 enumerator + collection 后的残留泄漏源）。
+    private static readonly FieldInfo? _sessionControlInterfaceField =
+        typeof(NAudio.CoreAudioApi.AudioSessionControl)
+            .GetField("audioSessionControlInterface", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? _sessionControlInterface2Field =
+        typeof(NAudio.CoreAudioApi.AudioSessionControl)
+            .GetField("audioSessionControlInterface2", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? _sessionAudioMeterField =
+        typeof(NAudio.CoreAudioApi.AudioSessionControl)
+            .GetField("<AudioMeterInformation>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? _audioMeterComField =
+        typeof(NAudio.CoreAudioApi.AudioMeterInformation)
+            .GetField("audioMeterInformation", BindingFlags.Instance | BindingFlags.NonPublic);
+
     // ★ 反射访问 NAudio MMDeviceCollection.mmDeviceCollection（私有 COM 字段）。
     //   背景：EnumerateAudioEndPoints 每次创建新 MMDeviceCollection（含 IMMDeviceCollection COM RCW），
     //   不实现 IDisposable，旧 RCW 等 GC 终结 → audiodg 内存持续增长（v1.2.27 修了 session enumerator
@@ -202,7 +220,9 @@ public static class PeakMonitor
                     var pidName = _cachedPidName;
                     for (int i = 0; i < sessions.Count; i++)
                     {
-                        using var session = sessions[i];
+                        var session = sessions[i];
+                        try
+                        {
                         var pid = (int)session.GetProcessID;
                         if (pid == 0) continue;
 
@@ -227,6 +247,16 @@ public static class PeakMonitor
                         {
                             if (!_nameRoundReuse.TryGetValue(nm, out var nc) || peak > nc)
                                 _nameRoundReuse[nm] = peak;
+                        }
+                        }
+                        finally
+                        {
+                            // ★ 先手动释放底层 COM 引用（NAudio Dispose 不释放它们），再 Dispose wrapper。
+                            //   AudioSessionControl.Dispose 只取消事件通知，不释放 IAudioSessionControl COM；
+                            //   AudioMeterInformation 不 IDisposable，持有 IAudioMeterInformation COM 也不释放。
+                            //   每个session每轮泄漏这3个COM，一晚累积271MB。这里手动释放清零。
+                            ReleaseSessionComObjects(session);
+                            session.Dispose();
                         }
                     }
 
@@ -432,6 +462,39 @@ public static class PeakMonitor
         {
             if (_mmDeviceCollectionField.GetValue(col) is object comObj)
                 Marshal.ReleaseComObject(comObj);
+        }
+        catch
+        {
+            // 释放失败不影响主轮询。
+        }
+    }
+
+    /// <summary>
+    /// 释放单个 <see cref="NAudio.CoreAudioApi.AudioSessionControl"/> 持有的全部底层 COM 引用。
+    /// NAudio 的 Dispose 只取消事件通知回调，不释放 IAudioSessionControl / IAudioSessionControl2 COM；
+    /// AudioMeterInformation 不实现 IDisposable，持有 IAudioMeterInformation COM 也不释放。
+    /// 每个 session 每轮泄漏这 3 个 COM 引用，是 v1.2.30 后的残留慢速泄漏源（一晚 271MB）。
+    /// 在 using Dispose 之前调用本方法手动释放。
+    /// </summary>
+    private static void ReleaseSessionComObjects(NAudio.CoreAudioApi.AudioSessionControl session)
+    {
+        try
+        {
+            // 释放 AudioMeterInformation 内部的 IAudioMeterInformation COM
+            if (_sessionAudioMeterField is not null && _audioMeterComField is not null)
+            {
+                if (_sessionAudioMeterField.GetValue(session) is NAudio.CoreAudioApi.AudioMeterInformation ami)
+                {
+                    if (_audioMeterComField.GetValue(ami) is object meterCom)
+                        Marshal.ReleaseComObject(meterCom);
+                }
+            }
+            // 释放 IAudioSessionControl2（GetProcessID 走的就是这个接口）
+            if (_sessionControlInterface2Field?.GetValue(session) is object iface2)
+                Marshal.ReleaseComObject(iface2);
+            // 释放 IAudioSessionControl
+            if (_sessionControlInterfaceField?.GetValue(session) is object iface1)
+                Marshal.ReleaseComObject(iface1);
         }
         catch
         {
