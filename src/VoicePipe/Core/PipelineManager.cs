@@ -73,10 +73,10 @@ public class PipelineManager : IDisposable
         set
         {
             _mixer.MonitorEnabled = value;
-            // 监听输出链按开关启停。开：用幂等 EnsureStarted（避免与 ViewModel.EnsureMonitorRunning 重复 Start）；
-            // 关：停监听输出链。仅在已有 _monitor 实例时即时生效。
-            if (value) _monitor?.EnsureStarted();
-            else _monitor?.Stop();
+            // ★ Task.Run：EnsureStarted/Stop 内有 lock(_sync) + 慢 COM 调用（WasapiOut），
+            //   不能在 UI 线程同步调，否则后台线程持 _sync 时 UI 线程等 _sync 立即卡死。
+            if (value) _ = Task.Run(() => _monitor?.EnsureStarted());
+            else _ = Task.Run(() => _monitor?.Stop());
         }
     }
 
@@ -414,9 +414,12 @@ public class PipelineManager : IDisposable
     public void StopMonitorStandalone()
     {
         if (_mixer.VbCableActive) return; // VB-Cable 在跑，mic 归主路径管，别动
-        _monitor?.Stop();
-        _micCapture?.Dispose();
+        _ = Task.Run(() => _monitor?.Stop()); // ★ fire-and-forget：Stop 内有 lock(_sync) + 慢 COM
+        // ★ fire-and-forget mic Dispose（同 StartAsync/StopAsync）
+        var oldMic = _micCapture;
         _micCapture = null;
+        if (oldMic != null)
+            _ = Task.Run(() => { try { oldMic.Dispose(); } catch { } });
         // ★ 释放麦克风占用，PeakMonitor 可恢复对选中麦克风的静默监听测电平
         PeakMonitor.SetRunningMic(null);
         WaveformAnalyzer.Clear();

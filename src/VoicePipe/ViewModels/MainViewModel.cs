@@ -691,10 +691,11 @@ public partial class MainViewModel : ObservableObject
         //   开：确保 mic 在采 + 监听链启动（VB-Cable 停了就自驱动混音引擎）
         //   关：若 VB-Cable 没在跑，释放为监听单独拉起的 mic + 清波形
         if (_settingsLoading) return;
+        // ★ Task.Run：EnsureMonitorRunning -> EnsureStarted -> lock(_sync) + 慢 COM，不能 UI 线程同步调
         if (value)
-            _pipeline.EnsureMonitorRunning(SelectedMic?.Id ?? "");
+            _ = Task.Run(() => _pipeline.EnsureMonitorRunning(SelectedMic?.Id ?? ""));
         else
-            _pipeline.StopMonitorStandalone();
+            _ = Task.Run(() => _pipeline.StopMonitorStandalone());
     }
 
     partial void OnMonitorAppChanged(bool value)
@@ -1025,8 +1026,11 @@ public partial class MainViewModel : ObservableObject
         }
         // ★ standalone 监听场景（已停止混音但监听开着，IsRunning=false）：
         //   换麦克风时 IsRunning 分支不会触发，需要主动让监听切到新麦克风，否则还在听旧麦克风。
+        //   ★ Task.Run：EnsureMonitorRunning -> EnsureStarted -> lock(_sync) 内有慢 COM 调用
+        //   (MMDeviceEnumerator + WasapiOut 构造)，不能在 UI 线程同步调——否则如果后台线程恰好
+        //   持着 _sync 做 WasapiOut 初始化，UI 线程等 _sync 就会立即卡死（这是切麦立即卡死的真正根因）。
         else if (!IsRunning && !_isMicPassthroughActive && MonitorEnabled && value != null)
-            _pipeline.EnsureMonitorRunning(value.Id);
+            _ = Task.Run(() => _pipeline.EnsureMonitorRunning(value.Id));
     }
 
     /// <summary>麦克风下拉菜单打开：临时监听全部麦克风，便于用音量条辨认设备。</summary>
