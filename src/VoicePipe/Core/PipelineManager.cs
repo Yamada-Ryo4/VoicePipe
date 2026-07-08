@@ -117,23 +117,27 @@ public class PipelineManager : IDisposable
 
     public async Task StartAsync(int targetPid, string micId)
     {
+        Serilog.Log.Information("StartAsync: 等待 _gate PID={Pid} Mic={Mic}", targetPid, micId);
         // ★ 串行化，防止运行中快速切换源/麦克风导致两次 Start 重叠
         await _gate.WaitAsync();
+        Serilog.Log.Information("StartAsync: _gate 获取成功，开始");
         try
         {
         // ★★ 复用判断（核心优化）：
         //   仅在设备/资源真的需要换的时候才拆解重建。三类资源各自独立判断：
-        //     1) Writer（VB-Cable）：只要 IsAlive 就一直复用 — 我们永远输出到 CABLE Input 这一个设备
-        //     2) MicCapturer：当前设备 == 新设备 → 复用；否则才重建
+        //     1) Writer（VB-Cable）：只要 IsAlive 就一直复用 - 我们永远输出到 CABLE Input 这一个设备
+        //     2) MicCapturer：当前设备 == 新设备 -> 复用；否则才重建
         //     3) MonitorOutput：在下面 EnsureStarted 里幂等处理
         //
-        //   解决"直通→开始混音(同麦)" 的卡顿问题：以前无脑 Dispose 旧 mic + new writer，
+        //   解决"直通->开始混音(同麦)" 的卡顿问题：以前无脑 Dispose 旧 mic + new writer，
         //   HyperX 等驱动 WASAPI 资源拆解可耗 3-7s。现在直接走快路径，几毫秒完成。
         bool reuseWriter = _writer != null && _writer.IsAlive;
         bool reuseMic = _micCapture != null && _micCapture.IsAlive
                         && string.Equals(_micCapture.CurrentDeviceId, micId, StringComparison.Ordinal);
+        Serilog.Log.Information("StartAsync: reuseWriter={W} reuseMic={M}", reuseWriter, reuseMic);
 
         // 后台线程清理 + 必要的拆解（任何 COM 操作都不在 UI 线程做）
+        Serilog.Log.Information("StartAsync: 开始后台清理（PurgeDeadSessions + Dispose）");
         await Task.Run(() =>
         {
             // 清理已退出进程的缓存会话
@@ -151,6 +155,7 @@ public class PipelineManager : IDisposable
                 _micCapture = null;
             }
         });
+        Serilog.Log.Information("StartAsync: 后台清理完成");
 
         // 切换当前 PID（影响哪个 capturer 的数据会被喂入 mixer）
         _currentPid = targetPid;
@@ -162,6 +167,7 @@ public class PipelineManager : IDisposable
         // 查找或创建该 PID 的 LoopbackCapturer（已在后台线程）
         if (!_loopbackCache.TryGetValue(targetPid, out var capturer))
         {
+            Serilog.Log.Information("StartAsync: 创建新 LoopbackCapturer PID={Pid}", targetPid);
             capturer = new LoopbackCapturer();
             capturer.Paused = false;
 
@@ -177,8 +183,12 @@ public class PipelineManager : IDisposable
 
             _loopbackCache[targetPid] = capturer;
             await capturer.StartAsync(targetPid);
+            Serilog.Log.Information("StartAsync: LoopbackCapturer 启动完成 PID={Pid}", targetPid);
         }
-        // else: 已有缓存的 capturer 在后台运行，直接复用
+        else
+        {
+            Serilog.Log.Information("StartAsync: LoopbackCapturer 缓存命中 PID={Pid}", targetPid);
+        }
 
         // ★ 复用 Writer 时不要 Reset mixer：会清空 RingBuffer 导致正在输出的连续流出现微杂音/断续。
         //   只有真的拆建过 writer 时才需要 Reset 以避免遗留数据。
@@ -187,9 +197,11 @@ public class PipelineManager : IDisposable
         // ★ Writer 初始化（FindCableInputDevice 枚举 + WasapiOut 构造）移到后台线程
         if (!reuseWriter)
         {
+            Serilog.Log.Information("StartAsync: 初始化 Writer");
             var writer = new VirtualMicWriter();
             await Task.Run(() => writer.Initialize(_mixer));
             _writer = writer;
+            Serilog.Log.Information("StartAsync: Writer 初始化完成");
         }
         // else: 复用现有 writer，CABLE Input 输出从未断过，零延迟切换
         _mixer.VbCableActive = true; // ★ VB-Cable 在跑，监听走 _monitorBuffer（Read 填的）
@@ -197,9 +209,11 @@ public class PipelineManager : IDisposable
         // 麦克风：复用就跳过整次 Start（几毫秒级；否则才重建）
         if (!reuseMic)
         {
+            Serilog.Log.Information("StartAsync: 创建新 MicCapturer Mic={Mic}", micId);
             _micCapture = new MicCapturer();
             _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
             _micCapture.Start(micId);
+            Serilog.Log.Information("StartAsync: MicCapturer Start 已调用");
         }
 
         // ★ 本地监听：若主开关开着，启动独立监听输出链（不影响 VB-Cable）
@@ -207,10 +221,12 @@ public class PipelineManager : IDisposable
         _monitor ??= new MonitorOutput(_mixer);
         _monitor.TargetDeviceId = _monitorDeviceId; // 套用持久化的监听设备（空=系统默认）
         if (_mixer.MonitorEnabled) _monitor.EnsureStarted();
+        Serilog.Log.Information("StartAsync: 全部完成");
         }
         finally
         {
             _gate.Release();
+            Serilog.Log.Information("StartAsync: _gate 已释放");
         }
     }
 

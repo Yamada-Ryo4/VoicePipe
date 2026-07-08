@@ -978,15 +978,17 @@ public partial class MainViewModel : ObservableObject
                 value.Name, value.Id, IsRunning, _isMicPassthroughActive);
         if (IsRunning && value != null && SelectedProcess != null)
             _ = StartPipelineCommand.ExecuteAsync(null);
-        // ★ 直通状态下换麦克风：重新走一次 Start → StopAppOnly 路径，让新麦克风生效
+        // ★ 直通状态下换麦克风：重新走一次 Start -> StopAppOnly 路径，让新麦克风生效
         else if (!IsRunning && _isMicPassthroughActive && value != null && SelectedProcess != null)
         {
-            _ = Task.Run(async () => await Application.Current.Dispatcher.InvokeAsync(async () =>
+            // ★ 直接 fire-and-forget StartPipeline，完成后若 MicPassthrough 勾着则 Stop 进直通。
+            //   之前用 Task.Run + Dispatcher.InvokeAsync 嵌套调用，容易造成 Dispatcher 队列死锁导致 UI 卡死。
+            _ = StartPipelineCommand.ExecuteAsync(null).ContinueWith(_ =>
             {
-                await StartPipelineCommand.ExecuteAsync(null);
                 if (IsRunning && MicPassthrough)
-                    await StopPipelineCommand.ExecuteAsync(null);
-            }));
+                    Application.Current.Dispatcher.InvokeAsync(() =>
+                        _ = StopPipelineCommand.ExecuteAsync(null));
+            });
         }
         // ★ standalone 监听场景（已停止混音但监听开着，IsRunning=false）：
         //   换麦克风时 IsRunning 分支不会触发，需要主动让监听切到新麦克风，否则还在听旧麦克风。
