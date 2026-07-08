@@ -226,7 +226,7 @@ public class PipelineManager : IDisposable
         //   用 EnsureStarted 幂等启动，已在跑就直接复用，避免每次 StartAsync 都 Stop+New 一次（~50ms）
         _monitor ??= new MonitorOutput(_mixer);
         _monitor.TargetDeviceId = _monitorDeviceId; // 套用持久化的监听设备（空=系统默认）
-        if (_mixer.MonitorEnabled) _monitor.EnsureStarted();
+        if (_mixer.MonitorEnabled) { var m = _monitor; _ = Task.Run(() => m.EnsureStarted()); } // ★ fire-and-forget
         Serilog.Log.Information("StartAsync: 全部完成");
         }
         finally
@@ -324,13 +324,16 @@ public class PipelineManager : IDisposable
             foreach (var capturer in _loopbackCache.Values)
                 capturer.Paused = true;
             // ★ 监听已开 -> 确保监听输出链在跑（它现在自驱动混音引擎）
-            _monitor?.EnsureStarted();
+            //   Task.Run：EnsureStarted 内 lock(_sync) + 慢 COM，不能在 UI 线程同步调
+            var mon = _monitor;
+            if (mon != null) _ = Task.Run(() => mon.EnsureStarted());
             // MicCapturer 保持不动，继续 FeedMic -> GenerateMonitorStandalone 消费
         }
         else
         {
             // 完全停止：停监听输出、暂停所有 loopback、释放 mic、清波形显示
-            _monitor?.Stop();
+            var monStop = _monitor;
+            if (monStop != null) _ = Task.Run(() => monStop.Stop());
             foreach (var capturer in _loopbackCache.Values)
                 capturer.Paused = true;
             // ★ fire-and-forget mic Dispose（同 StartAsync：驱动可能卡数秒）
@@ -382,7 +385,8 @@ public class PipelineManager : IDisposable
         {
             _monitor ??= new MonitorOutput(_mixer);
             _monitor.TargetDeviceId = _monitorDeviceId;
-            _monitor.EnsureStarted();
+            var mon1 = _monitor;
+            if (mon1 != null) _ = Task.Run(() => mon1.EnsureStarted()); // ★ fire-and-forget
             return;
         }
 
@@ -391,7 +395,11 @@ public class PipelineManager : IDisposable
                         && string.Equals(_micCapture.CurrentDeviceId, micId, StringComparison.Ordinal);
         if (!micAlive && !string.IsNullOrEmpty(micId))
         {
-            _micCapture?.Dispose();
+            // ★ fire-and-forget 旧 mic Dispose
+            var oldMic = _micCapture;
+            _micCapture = null;
+            if (oldMic != null)
+                _ = Task.Run(() => { try { oldMic.Dispose(); } catch { } });
             _micCapture = new MicCapturer();
             _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
             _micCapture.Start(micId);
@@ -403,7 +411,8 @@ public class PipelineManager : IDisposable
 
         _monitor ??= new MonitorOutput(_mixer);
         _monitor.TargetDeviceId = _monitorDeviceId;
-        _monitor.EnsureStarted();
+        var mon2 = _monitor;
+        if (mon2 != null) _ = Task.Run(() => mon2.EnsureStarted()); // ★ fire-and-forget
     }
 
     /// <summary>
