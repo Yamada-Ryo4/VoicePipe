@@ -1202,9 +1202,18 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public void Cleanup()
     {
-        _pipeline.Dispose();
+        // ★ 停 UI 定时器（快，UI 线程同步即可）
         _refreshTimer.Stop();
         _waveformTimer.Stop();
         PeakMonitor.Stop();
+
+        // ★ 管线 Dispose 全部 fire-and-forget 到后台线程：
+        //   writer.Stop / monitor.Dispose / micCapture.Dispose / loopback.Dispose 全是慢 COM 调用，
+        //   在 UI 线程同步调会卡死（HyperX 驱动 Dispose 卡数秒 / MonitorOutput lock(_sync) 等后台线程）。
+        //   进程退出时 OS 自动回收所有资源，不需要等 Dispose 完成。
+        _ = Task.Run(() =>
+        {
+            try { _pipeline.Dispose(); } catch (Exception ex) { Serilog.Log.Warning(ex, "Cleanup: pipeline Dispose 异常"); }
+        });
     }
 }

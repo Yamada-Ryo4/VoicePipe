@@ -14,9 +14,9 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <!-- 版本号：与界面标题、安装包 AppVersion 保持一致。UpdateService 读程序集版本判断本地版本。 -->
-    <Version>1.2.39</Version>
-    <AssemblyVersion>1.2.39.0</AssemblyVersion>
-    <FileVersion>1.2.39.0</FileVersion>
+    <Version>1.2.40</Version>
+    <AssemblyVersion>1.2.40.0</AssemblyVersion>
+    <FileVersion>1.2.40.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
