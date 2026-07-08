@@ -74,10 +74,20 @@ public sealed class MonitorOutput : IDisposable
             {
                 // 已在跑：仅当目标设备和当前设备不匹配时才重启。
                 bool defaultRequested = string.IsNullOrEmpty(_targetDeviceId);
-                bool currentMatches = defaultRequested
-                    ? true   // 跟默认 — 假设默认没变（设备切换由 TargetDeviceId setter 处理）
-                    : _device.ID == _targetDeviceId;
-                if (currentMatches) return; // ★ 复用：直接走人，零开销
+                try
+                {
+                    bool currentMatches = defaultRequested
+                        ? true   // 跟默认 - 假设默认没变（设备切换由 TargetDeviceId setter 处理）
+                        : _device.ID == _targetDeviceId;
+                    if (currentMatches) return; // ★ 复用：直接走人，零开销
+                }
+                catch
+                {
+                    // ★ _device 的底层 COM 可能被 fire-and-forget StopLocked 释放了（竞态），
+                    //   访问 _device.ID 抛 InvalidCastException (E_NOINTERFACE)。
+                    //   不返回，走 StartLocked 重建。
+                    Serilog.Log.Warning("MonitorOutput: EnsureStarted 检测到 _device COM 失效，重建");
+                }
             }
             StartLocked();
         }
