@@ -72,6 +72,11 @@ public partial class MainViewModel : ObservableObject
     // ★ RefreshAllAsync 重入守卫：_refreshTimer.Tick 用 async void lambda，
     //   若上一轮 2s 内未完成又触发，会并发修改 Processes/MicDevices 集合。用此标志跳过重叠调用。
     private bool _refreshing;
+
+    // ★ 直通态切麦防重入：用户快速连切两次麦时，第一次 Start->Stop 还在 await _gate，
+    //   第二次又触发 Start -> await _gate 永久等待 -> UI 卡死。用此标志跳过重叠触发。
+    private bool _passthroughSwitching;
+    private string? _pendingPassthroughMicId;
     [ObservableProperty] private bool _isMicMuted;
     private bool _isMicPassthroughActive; // 当前是否处于麦克风直通状态
 
@@ -981,14 +986,42 @@ public partial class MainViewModel : ObservableObject
         // ★ 直通状态下换麦克风：重新走一次 Start -> StopAppOnly 路径，让新麦克风生效
         else if (!IsRunning && _isMicPassthroughActive && value != null && SelectedProcess != null)
         {
-            // ★ 直接 fire-and-forget StartPipeline，完成后若 MicPassthrough 勾着则 Stop 进直通。
-            //   之前用 Task.Run + Dispatcher.InvokeAsync 嵌套调用，容易造成 Dispatcher 队列死锁导致 UI 卡死。
-            _ = StartPipelineCommand.ExecuteAsync(null).ContinueWith(_ =>
+            // ★ 防重入：如果上一个 Start->Stop 还在进行中（_passthroughSwitching=true），跳过本次。
+            //   用户快速连切两次麦时，第一次 Start 还在 await _gate，第二次又触发 Start ->
+            //   第二次 await _gate 永久等待 -> UI 卡死。跳过后用户选的麦已经是最终的，
+            //   第一个 Start->Stop 完成后如果 mic 不对，用户可以再切一次（或者我们下面补一次）。
+            if (_passthroughSwitching)
             {
-                if (IsRunning && MicPassthrough)
-                    Application.Current.Dispatcher.InvokeAsync(() =>
-                        _ = StopPipelineCommand.ExecuteAsync(null));
-            });
+                Serilog.Log.Information("OnSelectedMicChanged: 直通切换正在进行中，跳过本次（防重入）Mic={Mic}", value.Name);
+                // ★ 记住用户想切的目标，上一个完成后补切一次
+                _pendingPassthroughMicId = value.Id;
+            }
+            else
+            {
+                _passthroughSwitching = true;
+                _ = StartPipelineCommand.ExecuteAsync(null).ContinueWith(_ =>
+                {
+                    _passthroughSwitching = false;
+                    // ★ 上一个完成后，如果用户期间又切了麦，补一次
+                    var pending = _pendingPassthroughMicId;
+                    _pendingPassthroughMicId = null;
+                    if (pending != null && SelectedMic?.Id != pending)
+                    {
+                        Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            // 重新触发 OnSelectedMicChanged（SelectedMic 已被用户改了，这里重新赋值触发）
+                            var cur = SelectedMic;
+                            SelectedMic = null;
+                            SelectedMic = cur;
+                        });
+                    }
+                    else if (IsRunning && MicPassthrough)
+                    {
+                        Application.Current.Dispatcher.InvokeAsync(() =>
+                            _ = StopPipelineCommand.ExecuteAsync(null));
+                    }
+                });
+            }
         }
         // ★ standalone 监听场景（已停止混音但监听开着，IsRunning=false）：
         //   换麦克风时 IsRunning 分支不会触发，需要主动让监听切到新麦克风，否则还在听旧麦克风。

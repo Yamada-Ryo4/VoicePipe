@@ -31,7 +31,7 @@ public partial class App : Application
                 System.IO.Path.Combine(AppContext.BaseDirectory, "logs", "voicepipe.log"),
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7,
-                flushToDiskInterval: TimeSpan.FromSeconds(15), // ★ 每 15 秒刷一次，减少 SSD 写入
+                flushToDiskInterval: TimeSpan.Zero, // ★ 每条日志立即 flush 到磁盘（卡死时也能看到最后一条）
                 shared: true) // ★ 允许日志控制台等其他进程同时读取
             .WriteTo.Sink(InMemoryLogSink.Instance)
             .CreateLogger();
