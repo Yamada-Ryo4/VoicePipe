@@ -95,21 +95,34 @@ public partial class LogConsoleWindow : Window
             return;
         }
 
-        // ★ 剪贴板可能被其它进程短暂占用而抛 COMException：重试几次 + 兜底，绝不崩。
-        for (int attempt = 0; attempt < 3; attempt++)
+        // ★ 剪贴板操作必须在 STA(UI) 线程，但 Thread.Sleep 会卡 UI。
+        //   用 DispatcherTimer 异步重试：每次失败后 100ms 再试，不阻塞 UI。
+        TbStatus.Text = "正在复制...";
+        int attempt = 0;
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        timer.Tick += (_, _) =>
         {
             try
             {
-                Clipboard.SetDataObject(all, true); // copy=true：本进程退出后内容仍保留在剪贴板
+                Clipboard.SetDataObject(all, true);
                 TbStatus.Text = $"已复制 {history.Count} 行到剪贴板";
-                return;
+                timer.Stop();
             }
-            catch
+            catch (Exception ex)
             {
-                System.Threading.Thread.Sleep(40);
+                attempt++;
+                Serilog.Log.Warning(ex, "LogConsole: 复制全部第 {N} 次失败", attempt);
+                if (attempt >= 10)
+                {
+                    // ★ 最后兜底：SetText
+                    try { Clipboard.SetText(all); TbStatus.Text = $"已复制 {history.Count} 行到剪贴板"; }
+                    catch { TbStatus.Text = "复制失败：剪贴板被占用，请重试"; }
+                    timer.Stop();
+                }
+                // 否则等 100ms 自动重试
             }
-        }
-        TbStatus.Text = "复制失败：剪贴板被占用，请重试";
+        };
+        timer.Start();
     }
 
     private void CbTopmost_Changed(object sender, RoutedEventArgs e)
