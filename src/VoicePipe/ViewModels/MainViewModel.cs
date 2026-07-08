@@ -507,7 +507,7 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Serilog.Log.Error(ex, "Pipeline start failed");
+            Serilog.Log.Error(ex, "Pipeline start failed\n{Stack}", ex.StackTrace);
             StatusText = $"Error: {ex.Message}";
         }
     }

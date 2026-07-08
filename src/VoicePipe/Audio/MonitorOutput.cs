@@ -86,7 +86,8 @@ public sealed class MonitorOutput : IDisposable
     // 必须在持有 _sync 锁的前提下调用。
     private void StartLocked()
     {
-        StopLocked();
+        // ★ StopLocked 可能因 COM 异常失败（InvalidCastException 等），但不能让它阻止 Start。
+        try { StopLocked(); } catch (Exception ex) { Serilog.Log.Warning(ex, "MonitorOutput: StartLocked 内 StopLocked 失败（忽略，继续 Start）"); }
         if (_disposed) return;
         try
         {
