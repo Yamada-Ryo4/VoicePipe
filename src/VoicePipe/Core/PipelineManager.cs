@@ -151,8 +151,14 @@ public class PipelineManager : IDisposable
             }
             if (!reuseMic)
             {
-                _micCapture?.Dispose();
+                // ★ fire-and-forget 旧 MicCapturer 的 Dispose：
+                //   HyperX 等虚拟音频设备的 WasapiCapture.Dispose 可能卡数秒（驱动慢）。
+                //   之前同步 await 等 Dispose 完成 -> StartAsync 卡住 -> 用户再切麦 -> 第二次 StartAsync 等 _gate -> 永久死锁。
+                //   现在把旧 capturer 拎出来后台 Dispose，立即 _micCapture = null 让 StartAsync 继续。
+                var oldMic = _micCapture;
                 _micCapture = null;
+                if (oldMic != null)
+                    Task.Run(() => { try { oldMic.Dispose(); } catch { } });
             }
         });
         Serilog.Log.Information("StartAsync: 后台清理完成");
@@ -248,7 +254,14 @@ public class PipelineManager : IDisposable
             {
                 PurgeDeadSessions();
                 if (!reuseWriter) { _writer?.Stop(); _writer = null; }
-                if (!reuseMic)   { _micCapture?.Dispose(); _micCapture = null; }
+                if (!reuseMic)
+                {
+                    // ★ 同 StartAsync：fire-and-forget 旧 MicCapturer Dispose（驱动可能卡数秒）
+                    var oldMic = _micCapture;
+                    _micCapture = null;
+                    if (oldMic != null)
+                        Task.Run(() => { try { oldMic.Dispose(); } catch { } });
+                }
             });
 
             _currentPid = 0;

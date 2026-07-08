@@ -5,7 +5,7 @@
 ; ══════════════════════════════════════════════════════════════════
 
 #define AppName      "VoicePipe"
-#define AppVersion   "1.2.34"
+#define AppVersion   "1.2.35"
 #define AppPublisher "Yamada Ryo"
 #define AppExeName   "VoicePipe.exe"
 #define AppId        "{{B4F2A3C1-E71D-4B8A-9D5F-A1C23E45F678}"
