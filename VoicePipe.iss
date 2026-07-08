@@ -5,7 +5,7 @@
 ; ══════════════════════════════════════════════════════════════════
 
 #define AppName      "VoicePipe"
-#define AppVersion   "1.2.35"
+#define AppVersion   "1.2.36"
 #define AppPublisher "Yamada Ryo"
 #define AppExeName   "VoicePipe.exe"
 #define AppId        "{{B4F2A3C1-E71D-4B8A-9D5F-A1C23E45F678}"
@@ -61,7 +61,7 @@ Name: "startuprun";  Description: "开机自动启动 VoicePipe";  GroupDescript
 
 [Files]
 ; ── 主程序 + 所有依赖（Self-Contained，包含 .NET 运行时，无需用户单独安装）──
-Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "logs\*"
 
 ; ── VB-Cable 完整驱动包（必须包含全部文件，否则安装器找不到 .inf 驱动文件）──
 ; 安装完成后自动从临时目录删除

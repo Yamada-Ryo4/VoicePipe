@@ -158,7 +158,7 @@ public class PipelineManager : IDisposable
                 var oldMic = _micCapture;
                 _micCapture = null;
                 if (oldMic != null)
-                    Task.Run(() => { try { oldMic.Dispose(); } catch { } });
+                    _ = Task.Run(() => { try { oldMic.Dispose(); } catch { } });
             }
         });
         Serilog.Log.Information("StartAsync: 后台清理完成");
@@ -260,7 +260,7 @@ public class PipelineManager : IDisposable
                     var oldMic = _micCapture;
                     _micCapture = null;
                     if (oldMic != null)
-                        Task.Run(() => { try { oldMic.Dispose(); } catch { } });
+                        _ = Task.Run(() => { try { oldMic.Dispose(); } catch { } });
                 }
             });
 
@@ -299,19 +299,22 @@ public class PipelineManager : IDisposable
 
     public async Task StopAsync()
     {
+        Serilog.Log.Information("StopAsync: 等待 _gate");
         await _gate.WaitAsync();
+        Serilog.Log.Information("StopAsync: _gate 获取成功");
         try
         {
-        // ★ 停 VB-Cable 输出（writer）。停了之后 _mixer.Read() 不再被泵动，
-        //   VbCableActive=false → 监听改由 GenerateMonitorStandalone 自驱动。
-        _writer?.Stop();
+        // ★ 停 VB-Cable 输出（writer）。fire-and-forget：VB-Cable WasapiOut.Stop 可能慢。
+        var oldWriter = _writer;
         _writer = null;
+        if (oldWriter != null)
+            _ = Task.Run(() => { try { oldWriter.Stop(); } catch { } });
         _mixer.VbCableActive = false;
 
         // ★ 监听是否还开着，决定停止语义：
-        //   监听开 → 保留数据源（MicCapturer + loopback）继续喂混音引擎，
-        //            监听端 WasapiOut 接管泵动 → 停混音后仍能单独听麦克风/App、波形继续动
-        //   监听关 → 完全拆除所有数据源 + 清波形（彻底空闲）
+        //   监听开 -> 保留数据源（MicCapturer + loopback）继续喂混音引擎，
+        //            监听端 WasapiOut 接管泵动 -> 停混音后仍能单独听麦克风/App、波形继续动
+        //   监听关 -> 完全拆除所有数据源 + 清波形（彻底空闲）
         bool keepForMonitor = _mixer.MonitorEnabled;
 
         if (keepForMonitor)
@@ -320,9 +323,9 @@ public class PipelineManager : IDisposable
             _currentPid = 0;
             foreach (var capturer in _loopbackCache.Values)
                 capturer.Paused = true;
-            // ★ 监听已开 → 确保监听输出链在跑（它现在自驱动混音引擎）
+            // ★ 监听已开 -> 确保监听输出链在跑（它现在自驱动混音引擎）
             _monitor?.EnsureStarted();
-            // MicCapturer 保持不动，继续 FeedMic → GenerateMonitorStandalone 消费
+            // MicCapturer 保持不动，继续 FeedMic -> GenerateMonitorStandalone 消费
         }
         else
         {
@@ -330,8 +333,11 @@ public class PipelineManager : IDisposable
             _monitor?.Stop();
             foreach (var capturer in _loopbackCache.Values)
                 capturer.Paused = true;
-            _micCapture?.Dispose();
+            // ★ fire-and-forget mic Dispose（同 StartAsync：驱动可能卡数秒）
+            var oldMic = _micCapture;
             _micCapture = null;
+            if (oldMic != null)
+                _ = Task.Run(() => { try { oldMic.Dispose(); } catch { } });
             _currentPid = 0;
             // ★ 清波形/频谱，避免冻结在最后一帧（B：完全停止后显示平线）
             WaveformAnalyzer.Clear();
@@ -341,9 +347,8 @@ public class PipelineManager : IDisposable
         finally
         {
             _gate.Release();
+            Serilog.Log.Information("StopAsync: _gate 已释放");
         }
-
-        await Task.CompletedTask;
     }
 
     /// <summary>
