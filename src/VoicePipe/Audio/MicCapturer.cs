@@ -21,6 +21,10 @@ public class MicCapturer : IDisposable
     // 不一致说明期间有人调了 Stop() 或新的 Start()，丢弃本次初始化结果。
     private int _generation;
 
+    // ★ 重连计数器：防止设备持续不稳定时无限重试刷日志。每次用户主动 Start 重置为 0。
+    private int _reconnectAttempts;
+    private const int MaxReconnectAttempts = 10;
+
     // ★ 当前正在捕获的设备 ID（启动后由后台线程赋值，主线程读）。
     // PipelineManager 据此判断启动新管线时是否还在采同一个麦克风，能否跳过整次拆建。
     private volatile string? _currentDeviceId;
@@ -42,6 +46,7 @@ public class MicCapturer : IDisposable
         {
             Stop(); // 先停掉当前的
             myGeneration = ++_generation; // 记录本次世代号
+            _reconnectAttempts = 0; // ★ 用户主动 Start 重置重连计数
         }
 
         // 在 MTA 线程中做 WASAPI 初始化
@@ -96,17 +101,28 @@ public class MicCapturer : IDisposable
                         }
                         if (shouldReconnect)
                         {
-                            Serilog.Log.Warning("MicCapturer: 设备断连，2 秒后自动重连 {Id}", capturedDeviceId);
-                            _ = Task.Run(async () =>
+                            // ★ 重试次数限制：防止设备持续不稳定时无限重连刷日志。
+                            //   每次用户主动 Start 重置计数（见 Start 方法）。达到上限后放弃，
+                            //   用户可手动切换麦克风重新触发 Start（重置计数）。
+                            _reconnectAttempts++;
+                            if (_reconnectAttempts > MaxReconnectAttempts)
                             {
-                                await Task.Delay(2000);
-                                lock (_sync)
+                                Serilog.Log.Error("MicCapturer: 设备 {Id} 重连已达上限 {Max} 次，放弃重连", capturedDeviceId, MaxReconnectAttempts);
+                            }
+                            else
+                            {
+                                Serilog.Log.Warning("MicCapturer: 设备断连，2 秒后自动重连 {Id}（第 {N} 次）", capturedDeviceId, _reconnectAttempts);
+                                _ = Task.Run(async () =>
                                 {
-                                    if (_disposed || _generation != capturedGeneration) return;
-                                }
-                                Serilog.Log.Information("MicCapturer: 正在重连 {Id}", capturedDeviceId);
-                                Start(capturedDeviceId);
-                            });
+                                    await Task.Delay(2000);
+                                    lock (_sync)
+                                    {
+                                        if (_disposed || _generation != capturedGeneration) return;
+                                    }
+                                    Serilog.Log.Information("MicCapturer: 正在重连 {Id}", capturedDeviceId);
+                                    Start(capturedDeviceId);
+                                });
+                            }
                         }
                     };
                     _capture.StartRecording();

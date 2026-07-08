@@ -108,8 +108,8 @@ public sealed class RnnoiseDenoiser : IDisposable
         //   现用 lock 与 Dispose 互斥：整个 process_frame 调用链持锁，Dispose 持锁 destroy，
         //   二者不可能并发。持锁期间是 native process_frame（~2-5ms @48k/480 帧），
         //   Dispose 在退出线程短暂等待可接受（退出非热路径）。
-        //   注意：锁内不能再调本类其它会尝试重入 _stateLock 的方法（Monitor 不可重入会死锁），
-        //   ProcessStereo48kCore / DenoiseInPlace 都不持锁，安全。
+        //   注意：锁内不应调本类其它会重入 _stateLock 的方法（虽然 .NET Monitor 可重入，
+        //   但避免重入是良好实践且降低复杂度），ProcessStereo48kCore / DenoiseInPlace 都不持锁，安全。
         try
         {
             lock (_stateLock)
