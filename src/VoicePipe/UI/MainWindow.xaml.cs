@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Hardcodet.Wpf.TaskbarNotification;
 using VoicePipe.Services;
@@ -26,7 +27,11 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        // ★ 修复冷启动黑屏：资源字典加载前 Background 的 DynamicResource 解析为 null（透明/黑）。
+        //   InitializeComponent 后立即设硬编码 fallback；UpdateResourceDictionaries 加载主题后
+        //   重新 SetResourceReference 让 DynamicResource BgDeepBrush 接管（主题切换也能跟随）。
         InitializeComponent();
+        Background = new SolidColorBrush(Color.FromRgb(0x12, 0x12, 0x12)); // fallback
 
         var settings = Core.AppSettings.Current;
         _isDark = settings.IsDarkTheme; // ★ 恢复上次的主题选择
@@ -359,6 +364,11 @@ public partial class MainWindow : Window
         else
             merged.Add(newLang);
         _langDict = newLang;
+
+        // ★ 修复冷启动黑屏：主题/语言字典加载完毕后，让 Background 切回 DynamicResource。
+        //   构造函数里设了硬编码 fallback #121212，现在资源已就绪，SetResourceReference 让
+        //   BgDeepBrush DynamicResource 接管（主题切换也能跟随）。
+        SetResourceReference(BackgroundProperty, "BgDeepBrush");
     }
 
     private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
