@@ -93,3 +93,18 @@ public class PeakToClipBrushConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotImplementedException();
 }
+
+/// <summary>
+/// RadioButton 绑定字符串值：Convert(value, param) = (value == param)；
+/// ConvertBack：IsChecked=true 时返回 param，false 返回 DoNothing（不触发更新）。
+/// </summary>
+public class StringEqualConverter : IValueConverter
+{
+    public static readonly StringEqualConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is string s && parameter is string p && string.Equals(s, p, StringComparison.OrdinalIgnoreCase);
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is true && parameter is string p ? p : System.Windows.Data.Binding.DoNothing;
+}

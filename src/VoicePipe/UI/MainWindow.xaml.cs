@@ -171,6 +171,9 @@ public partial class MainWindow : Window
         Serilog.Log.Information("托盘：还原窗口");
         Show();
         WindowState = WindowState.Normal;
+        // ★ 修复从托盘还原黑屏：Show() 后 WPF 需要完成一次 layout/render pass 才能画出内容。
+        //   强制 Dispatcher 以 Render 优先级刷新，确保内容渲染完再 Activate（避免用户看到黑屏）。
+        Dispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Render, () => { });
         Activate();
     }
 
