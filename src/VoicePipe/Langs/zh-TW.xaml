@@ -68,7 +68,10 @@
     <sys:String x:Key="StrProxySection">下載代理</sys:String>
     <sys:String x:Key="StrProxyMode">代理模式</sys:String>
     <sys:String x:Key="StrProxyNone">無（直連）</sys:String>
-    <sys:String x:Key="StrProxyHint">HTTP/SOCKS5 填地址:連接埠（如 127.0.0.1:7890）；URL Prefix 填前綴地址（如 https://ghproxy.com），自動拼接斜線</sys:String>
+    <sys:String x:Key="StrProxyHintNone">不使用代理，直接連接 GitHub 下載。</sys:String>
+    <sys:String x:Key="StrProxyHintHttp">填寫 地址:連接埠，如 127.0.0.1:7890</sys:String>
+    <sys:String x:Key="StrProxyHintSocks5">填寫 地址:連接埠，如 127.0.0.1:1080</sys:String>
+    <sys:String x:Key="StrProxyHintUrl">填寫代理前綴地址，自動拼接到 GitHub 下載連結前。斜線會自動處理。</sys:String>
     <sys:String x:Key="StrGuideTitle">歡迎使用 VoicePipe</sys:String>
     <sys:String x:Key="StrGuideSubtitle">把某個應用的聲音和你的麥克風混合後送到語音軟體。三步搞定：</sys:String>
     <sys:String x:Key="StrGuideStep1">麥克風：選你平時說話用的那個。</sys:String>

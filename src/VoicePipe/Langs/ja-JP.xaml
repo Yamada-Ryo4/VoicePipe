@@ -68,7 +68,10 @@
     <sys:String x:Key="StrProxySection">ダウンロードプロキシ</sys:String>
     <sys:String x:Key="StrProxyMode">プロキシモード</sys:String>
     <sys:String x:Key="StrProxyNone">なし（直接接続）</sys:String>
-    <sys:String x:Key="StrProxyHint">HTTP/SOCKS5: アドレス:ポートを入力（例: 127.0.0.1:7890）。URL Prefix: プレフィックスURLを入力（例: https://ghproxy.com）、スラッシュは自動結合</sys:String>
+    <sys:String x:Key="StrProxyHintNone">プロキシなし、GitHubに直接接続します。</sys:String>
+    <sys:String x:Key="StrProxyHintHttp">アドレス:ポートを入力（例: 127.0.0.1:7890）</sys:String>
+    <sys:String x:Key="StrProxyHintSocks5">アドレス:ポートを入力（例: 127.0.0.1:1080）</sys:String>
+    <sys:String x:Key="StrProxyHintUrl">プロキシプレフィックスURLを入力。GitHubダウンロードURLに自動結合。スラッシュは自動処理。</sys:String>
     <sys:String x:Key="StrGuideTitle">VoicePipe へようこそ</sys:String>
     <sys:String x:Key="StrGuideSubtitle">アプリの音声とマイクをミックスして音声アプリへ送ります。3 ステップで設定：</sys:String>
     <sys:String x:Key="StrGuideStep1">マイク：普段話すマイクを選びます。</sys:String>
