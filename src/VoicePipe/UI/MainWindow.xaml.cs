@@ -100,10 +100,12 @@ public partial class MainWindow : Window
         // 对账开机自启：以注册表实际状态为准回写持久化意图
         try { settings.AutoStartBoot = _autoStart.IsEnabled(); } catch { }
 
-        // ★ 开机静默到托盘：若开启且本次随系统启动，初始化后直接隐藏到托盘（需 MinimizeToTray 才有托盘常驻意义）
-        if (settings.StartMinimized && settings.MinimizeToTray)
+        // ★ 开机静默到托盘：仅当随系统启动（带 --boot 参数）时才 Hide，
+        //   手动打开时不 Hide（否则每次手动开都要从托盘还原，且冷启动黑屏）。
+        bool isBootLaunch = Environment.GetCommandLineArgs().Contains("--boot", StringComparer.OrdinalIgnoreCase);
+        if (isBootLaunch && settings.StartMinimized && settings.MinimizeToTray)
         {
-            Serilog.Log.Information("开机静默到托盘：隐藏主窗口");
+            Serilog.Log.Information("开机静默到托盘：隐藏主窗口（--boot 启动）");
             Hide();
         }
     }

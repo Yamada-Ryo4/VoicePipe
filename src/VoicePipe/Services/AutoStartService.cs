@@ -46,8 +46,11 @@ public sealed class AutoStartService
             using var key = Registry.CurrentUser.OpenSubKey(RunKey);
             if (key?.GetValue(ValueName) is not string stored) return false;
 
-            // 存储形式带引号（"<exePath>"），比较前去除首尾引号。
+            // 存储形式带引号（"<exePath>" --boot），比较前去除引号和参数。
             string normalized = stored.Trim().Trim('"');
+            // 只比较 exe 路径部分（可能有 --boot 参数后缀）
+            int spaceIdx = normalized.IndexOf(' ');
+            if (spaceIdx >= 0) normalized = normalized.Substring(0, spaceIdx);
             return string.Equals(normalized, exePath, StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)
@@ -81,7 +84,7 @@ public sealed class AutoStartService
                     Serilog.Log.Warning("AutoStartService: 可执行文件路径不可用，跳过自启动注册");
                     return;
                 }
-                key.SetValue(ValueName, $"\"{exePath}\"", RegistryValueKind.String);
+                key.SetValue(ValueName, $"\"{exePath}\" --boot", RegistryValueKind.String);
                 Serilog.Log.Information("AutoStartService: 已注册登录自启动项 {Path}", exePath);
             }
             else
