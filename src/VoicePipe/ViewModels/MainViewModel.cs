@@ -774,10 +774,12 @@ public partial class MainViewModel : ObservableObject
     partial void OnProxyModeChanged(string value)
     {
         if (_settingsLoading) return;
+        // ★ 防止 RadioButton 切换时多次触发同一值
+        if (string.Equals(_settings.ProxyMode, value, StringComparison.OrdinalIgnoreCase)) return;
         _settings.ProxyMode = value;
         _updateService.ApplyProxySettings(value, _settings.ProxyAddress);
         Serilog.Log.Information("下载代理模式: {Mode}", value);
-        OnPropertyChanged(nameof(HasProxy)); // 通知地址输入框显隐
+        OnPropertyChanged(nameof(HasProxy));
         PersistSettings();
     }
 

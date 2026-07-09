@@ -86,7 +86,6 @@ public partial class LogConsoleWindow : Window
 
     private void CopyAll_Click(object sender, RoutedEventArgs e)
     {
-        // ★ 直接从日志 Sink 的历史取纯文本（快、准）。换行用 \r\n（Windows 剪贴板/记事本规范）。
         var history = InMemoryLogSink.GetHistory();
         var all = string.Join("\r\n", history.Select(h => h.Text));
         if (string.IsNullOrEmpty(all))
@@ -95,11 +94,12 @@ public partial class LogConsoleWindow : Window
             return;
         }
 
-        // ★ 剪贴板操作必须在 STA(UI) 线程，但 Thread.Sleep 会卡 UI。
-        //   用 DispatcherTimer 异步重试：每次失败后 100ms 再试，不阻塞 UI。
+        // ★ 剪贴板被其它进程持续占用时（剪贴板管理工具/远程桌面等），WPF Clipboard 会一直
+        //   抛 CLIPBRD_E_CANT_OPEN。用 DispatcherTimer 异步重试不卡 UI，最多 30 次（~6 秒）。
+        //   全部失败则写到临时文件，提示用户路径。
         TbStatus.Text = "正在复制...";
         int attempt = 0;
-        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         timer.Tick += (_, _) =>
         {
             try
@@ -108,18 +108,24 @@ public partial class LogConsoleWindow : Window
                 TbStatus.Text = $"已复制 {history.Count} 行到剪贴板";
                 timer.Stop();
             }
-            catch (Exception ex)
+            catch
             {
                 attempt++;
-                Serilog.Log.Warning(ex, "LogConsole: 复制全部第 {N} 次失败", attempt);
-                if (attempt >= 10)
+                if (attempt >= 30)
                 {
-                    // ★ 最后兜底：SetText
-                    try { Clipboard.SetText(all); TbStatus.Text = $"已复制 {history.Count} 行到剪贴板"; }
-                    catch { TbStatus.Text = "复制失败：剪贴板被占用，请重试"; }
+                    // ★ 兜底：写到临时文件
+                    try
+                    {
+                        string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "voicepipe_log.txt");
+                        System.IO.File.WriteAllText(tmp, all);
+                        TbStatus.Text = $"剪贴板被占用，日志已保存到: {tmp}";
+                    }
+                    catch
+                    {
+                        TbStatus.Text = "复制失败：剪贴板被占用，请关闭剪贴板管理工具后重试";
+                    }
                     timer.Stop();
                 }
-                // 否则等 100ms 自动重试
             }
         };
         timer.Start();

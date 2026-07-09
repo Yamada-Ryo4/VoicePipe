@@ -374,6 +374,13 @@ public partial class MainWindow : Window
         SetResourceReference(BackgroundProperty, "BgDeepBrush");
     }
 
+    /// <summary>代理模式 RadioButton Click：直接设 ViewModel.ProxyMode（避免双向 binding 循环触发）</summary>
+    private void ProxyMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.RadioButton rb && rb.Tag is string mode && DataContext is ViewModels.MainViewModel vm)
+            vm.ProxyMode = mode;
+    }
+
     private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
     {
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo

@@ -85,7 +85,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.45" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.46" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -902,24 +902,28 @@
                         <TextBlock Text="{DynamicResource StrProxySection}"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                        <!-- 4 个 RadioButton 横排，禁止滚轮切换 -->
+                        <!-- 4 个 RadioButton 横排，Click 事件设值（避免双向 binding 循环触发） -->
                         <WrapPanel Margin="0,0,0,10" Orientation="Horizontal">
                             <RadioButton Content="{DynamicResource StrProxyNone}"
-                                         IsChecked="{Binding ProxyMode, Converter={x:Static ui:StringEqualConverter.Instance}, ConverterParameter=none}"
+                                         IsChecked="{Binding ProxyMode, Converter={x:Static ui:StringEqualConverter.Instance}, ConverterParameter=none, Mode=OneWay}"
                                          Foreground="{DynamicResource TextPrimaryBrush}"
-                                         FontSize="12" Margin="0,0,16,4" VerticalContentAlignment="Center"/>
+                                         FontSize="12" Margin="0,0,16,4" VerticalContentAlignment="Center"
+                                         Click="ProxyMode_Click" Tag="none"/>
                             <RadioButton Content="HTTP"
-                                         IsChecked="{Binding ProxyMode, Converter={x:Static ui:StringEqualConverter.Instance}, ConverterParameter=http}"
+                                         IsChecked="{Binding ProxyMode, Converter={x:Static ui:StringEqualConverter.Instance}, ConverterParameter=http, Mode=OneWay}"
                                          Foreground="{DynamicResource TextPrimaryBrush}"
-                                         FontSize="12" Margin="0,0,16,4" VerticalContentAlignment="Center"/>
+                                         FontSize="12" Margin="0,0,16,4" VerticalContentAlignment="Center"
+                                         Click="ProxyMode_Click" Tag="http"/>
                             <RadioButton Content="SOCKS5"
-                                         IsChecked="{Binding ProxyMode, Converter={x:Static ui:StringEqualConverter.Instance}, ConverterParameter=socks5}"
+                                         IsChecked="{Binding ProxyMode, Converter={x:Static ui:StringEqualConverter.Instance}, ConverterParameter=socks5, Mode=OneWay}"
                                          Foreground="{DynamicResource TextPrimaryBrush}"
-                                         FontSize="12" Margin="0,0,16,4" VerticalContentAlignment="Center"/>
+                                         FontSize="12" Margin="0,0,16,4" VerticalContentAlignment="Center"
+                                         Click="ProxyMode_Click" Tag="socks5"/>
                             <RadioButton Content="URL Prefix"
-                                         IsChecked="{Binding ProxyMode, Converter={x:Static ui:StringEqualConverter.Instance}, ConverterParameter=urlprefix}"
+                                         IsChecked="{Binding ProxyMode, Converter={x:Static ui:StringEqualConverter.Instance}, ConverterParameter=urlprefix, Mode=OneWay}"
                                          Foreground="{DynamicResource TextPrimaryBrush}"
-                                         FontSize="12" Margin="0,0,0,4" VerticalContentAlignment="Center"/>
+                                         FontSize="12" Margin="0,0,0,4" VerticalContentAlignment="Center"
+                                         Click="ProxyMode_Click" Tag="urlprefix"/>
                         </WrapPanel>
                         <!-- 代理地址输入框（模式为 none 时隐藏） -->
                         <TextBox Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}"
