@@ -60,6 +60,11 @@ public class AppSettings
     public HotkeyBinding PipelineHotkey { get; set; } = HotkeyBinding.None; // Req 2.3
     // MicMuted is intentionally NOT persisted (session-only). App starts unmuted.
 
+    // 下载代理：ProxyMode = "none" | "http" | "socks5" | "urlprefix"
+    // ProxyAddress = HTTP/SOCKS5 代理地址（如 127.0.0.1:7890）或 URL 前缀（如 https://ghproxy.com）
+    public string ProxyMode    { get; set; } = "none";
+    public string ProxyAddress { get; set; } = "";
+
     private static string GetFilePath()
     {
         string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VoicePipe");

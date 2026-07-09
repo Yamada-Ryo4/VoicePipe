@@ -122,6 +122,13 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _startMinimized;
     [ObservableProperty] private bool _autoCheckUpdate;
 
+    // ★ 下载代理设置
+    [ObservableProperty] private string _proxyMode = "none";     // none|http|socks5|urlprefix
+    [ObservableProperty] private string _proxyAddress = "";      // 代理地址或 URL 前缀
+
+    // ★ 代理地址输入框可见性（ProxyMode != "none" 时显示）
+    public bool HasProxy => !string.Equals(ProxyMode, "none", StringComparison.OrdinalIgnoreCase);
+
     // 热键绑定 + 冲突标志
     [ObservableProperty] private HotkeyBinding _muteHotkey;
     [ObservableProperty] private HotkeyBinding _pipelineHotkey;
@@ -630,6 +637,10 @@ public partial class MainViewModel : ObservableObject
         AutoStartPipelineSetting = _settings.AutoStartPipeline;
         StartMinimized = _settings.StartMinimized;
         AutoCheckUpdate = _settings.AutoCheckUpdate;
+        // ★ 加载代理设置并应用到 UpdateService
+        ProxyMode = _settings.ProxyMode;
+        ProxyAddress = _settings.ProxyAddress;
+        _updateService.ApplyProxySettings(_settings.ProxyMode, _settings.ProxyAddress);
         MuteHotkey = _settings.MuteHotkey;
         PipelineHotkey = _settings.PipelineHotkey;
         _settingsLoading = false;
@@ -757,6 +768,25 @@ public partial class MainViewModel : ObservableObject
     {
         _settings.AutoCheckUpdate = value;
         if (!_settingsLoading) Serilog.Log.Information("启动自动检查更新: {State}", value ? "开" : "关");
+        PersistSettings();
+    }
+
+    partial void OnProxyModeChanged(string value)
+    {
+        if (_settingsLoading) return;
+        _settings.ProxyMode = value;
+        _updateService.ApplyProxySettings(value, _settings.ProxyAddress);
+        Serilog.Log.Information("下载代理模式: {Mode}", value);
+        OnPropertyChanged(nameof(HasProxy)); // 通知地址输入框显隐
+        PersistSettings();
+    }
+
+    partial void OnProxyAddressChanged(string value)
+    {
+        if (_settingsLoading) return;
+        _settings.ProxyAddress = value;
+        _updateService.ApplyProxySettings(_settings.ProxyMode, value);
+        Serilog.Log.Information("下载代理地址: {Addr}", value);
         PersistSettings();
     }
 

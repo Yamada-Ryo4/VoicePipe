@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -17,8 +18,13 @@ public record UpdateCheckResult(
 /// <summary>
 /// 从 GitHub Releases 检查 VoicePipe 是否有新版本，并可下载安装包。
 ///
-/// 仅在用户主动点"检查更新"时联网（不后台自动请求）。所有网络/解析失败都被捕获，
-/// 以 <see cref="UpdateCheckResult.Error"/> 返回，绝不抛到 UI 线程。
+/// 支持下载代理：
+/// - none：直连
+/// - http：HTTP 代理（如 127.0.0.1:7890）
+/// - socks5：SOCKS5 代理（.NET 8 原生支持 socks5:// scheme）
+/// - urlprefix：URL 前缀代理（如 https://ghproxy.com，自动拼接到 GitHub download URL 前）
+///
+/// 所有网络/解析失败都被捕获，以 <see cref="UpdateCheckResult.Error"/> 返回，绝不抛到 UI 线程。
 /// </summary>
 public sealed class UpdateService
 {
@@ -27,18 +33,83 @@ public sealed class UpdateService
     private const string LatestApi = $"https://api.github.com/repos/{Owner}/{Repo}/releases/latest";
     private const string SetupAssetName = "VoicePipeSetup.exe";
 
-    // GitHub API 要求带 User-Agent，否则返回 403
-    // Http：检查版本用（小 JSON，15s 超时足够）
-    private static readonly HttpClient Http = CreateClient(TimeSpan.FromSeconds(15));
-    // DownloadHttp：下载安装包用（几十 MB，给足时间——总超时设为无限，靠流式读 + 用户可关窗取消）
-    private static readonly HttpClient DownloadHttp = CreateClient(System.Threading.Timeout.InfiniteTimeSpan);
+    // ★ HttpClient 改实例字段（原为 static），支持运行时切换代理。
+    private HttpClient _http = CreateClient(TimeSpan.FromSeconds(15), null);
+    private HttpClient _downloadHttp = CreateClient(System.Threading.Timeout.InfiniteTimeSpan, null);
 
-    private static HttpClient CreateClient(TimeSpan timeout)
+    // 代理设置（由 MainViewModel.ApplyProxySettings 注入）
+    private string _proxyMode = "none";
+    private string _proxyAddress = "";
+
+    private static HttpClient CreateClient(TimeSpan timeout, WebProxy? proxy)
     {
-        var c = new HttpClient { Timeout = timeout };
+        var handler = new HttpClientHandler();
+        if (proxy != null)
+        {
+            handler.Proxy = proxy;
+            handler.UseProxy = true;
+        }
+        var c = new HttpClient(handler) { Timeout = timeout };
         c.DefaultRequestHeaders.UserAgent.ParseAdd("VoicePipe-UpdateChecker");
         c.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return c;
+    }
+
+    /// <summary>
+    /// 应用代理设置。由 ViewModel 在代理设置变化时调用，重建内部 HttpClient。
+    /// </summary>
+    public void ApplyProxySettings(string mode, string address)
+    {
+        _proxyMode = mode ?? "none";
+        _proxyAddress = address ?? "";
+
+        WebProxy? proxy = null;
+        if (_proxyMode == "http" && !string.IsNullOrWhiteSpace(_proxyAddress))
+        {
+            // HTTP 代理：用户填 "127.0.0.1:7890"，补 http:// 前缀
+            string url = _proxyAddress.Trim();
+            if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                url = "http://" + url;
+            proxy = new WebProxy(url);
+            Serilog.Log.Information("UpdateService: 使用 HTTP 代理 {Addr}", _proxyAddress);
+        }
+        else if (_proxyMode == "socks5" && !string.IsNullOrWhiteSpace(_proxyAddress))
+        {
+            // SOCKS5 代理：.NET 8 的 WebProxy 支持 socks5:// scheme
+            string url = _proxyAddress.Trim();
+            if (!url.StartsWith("socks5://", StringComparison.OrdinalIgnoreCase) &&
+                !url.StartsWith("socks://", StringComparison.OrdinalIgnoreCase))
+                url = "socks5://" + url;
+            proxy = new WebProxy(url);
+            Serilog.Log.Information("UpdateService: 使用 SOCKS5 代理 {Addr}", _proxyAddress);
+        }
+        else if (_proxyMode == "urlprefix" && !string.IsNullOrWhiteSpace(_proxyAddress))
+        {
+            Serilog.Log.Information("UpdateService: 使用 URL 前缀代理 {Addr}", _proxyAddress);
+            // urlprefix 模式不改 HttpClient，在下载/检查时改 URL
+        }
+        else
+        {
+            Serilog.Log.Information("UpdateService: 直连（无代理）");
+        }
+
+        // 重建 HttpClient（释放旧的）
+        _http.Dispose();
+        _downloadHttp.Dispose();
+        _http = CreateClient(TimeSpan.FromSeconds(15), proxy);
+        _downloadHttp = CreateClient(System.Threading.Timeout.InfiniteTimeSpan, proxy);
+    }
+
+    /// <summary>
+    /// 对 URL 应用代理前缀（urlprefix 模式）。
+    /// 自动处理斜杠：proxyAddress.TrimEnd('/') + '/' + url.TrimStart('/')
+    /// </summary>
+    private string ApplyUrlPrefix(string url)
+    {
+        if (_proxyMode != "urlprefix" || string.IsNullOrWhiteSpace(_proxyAddress))
+            return url;
+        return _proxyAddress.TrimEnd('/') + "/" + url.TrimStart('/');
     }
 
     /// <summary>本地版本号（从程序集版本读取，与 csproj/AssemblyInfo 一致）。</summary>
@@ -59,7 +130,9 @@ public sealed class UpdateService
         string local = LocalVersion;
         try
         {
-            using var resp = await Http.GetAsync(LatestApi);
+            // ★ urlprefix 模式：GitHub API URL 也要加前缀（api.github.com 可能也被墙）
+            string apiUrl = ApplyUrlPrefix(LatestApi);
+            using var resp = await _http.GetAsync(apiUrl);
             resp.EnsureSuccessStatusCode();
             string json = await resp.Content.ReadAsStringAsync();
 
@@ -105,8 +178,10 @@ public sealed class UpdateService
     {
         try
         {
+            // ★ urlprefix 模式：下载 URL 加前缀
+            string actualUrl = ApplyUrlPrefix(downloadUrl);
             string dest = Path.Combine(Path.GetTempPath(), SetupAssetName);
-            using (var resp = await DownloadHttp.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
+            using (var resp = await _downloadHttp.GetAsync(actualUrl, HttpCompletionOption.ResponseHeadersRead))
             {
                 resp.EnsureSuccessStatusCode();
                 long? total = resp.Content.Headers.ContentLength;
@@ -131,7 +206,7 @@ public sealed class UpdateService
                     if (p > 1.0) p = 1.0;
                     progress?.Report(p);
                 }
-                progress?.Report(1.0); // 下载完成 → 100%
+                progress?.Report(1.0); // 下载完成 -> 100%
             }
             Serilog.Log.Information("UpdateService: 安装包已下载到 {Path}", dest);
             return dest;

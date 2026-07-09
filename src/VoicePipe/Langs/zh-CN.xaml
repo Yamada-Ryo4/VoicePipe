@@ -65,6 +65,10 @@
     <sys:String x:Key="StrUpdatePrompt">发现新版本 {0}（当前 {1}），是否立即更新？</sys:String>
     <sys:String x:Key="StrUpdateDownloaded">下载完成，是否现在更新？VoicePipe 将关闭以完成更新。</sys:String>
     <sys:String x:Key="StrUpdateReady">安装包已就绪</sys:String>
+    <sys:String x:Key="StrProxySection">下载代理</sys:String>
+    <sys:String x:Key="StrProxyMode">代理模式</sys:String>
+    <sys:String x:Key="StrProxyNone">无（直连）</sys:String>
+    <sys:String x:Key="StrProxyHint">HTTP/SOCKS5 填地址:端口（如 127.0.0.1:7890）；URL Prefix 填前缀地址（如 https://ghproxy.com），自动拼接斜杠</sys:String>
     <sys:String x:Key="StrGuideTitle">欢迎使用 VoicePipe</sys:String>
     <sys:String x:Key="StrGuideSubtitle">把某个应用的声音和你的麦克风混合后送到语音软件。三步搞定：</sys:String>
     <sys:String x:Key="StrGuideStep1">麦克风：选你平时说话用的那个。</sys:String>

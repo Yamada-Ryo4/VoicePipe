@@ -85,7 +85,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.43" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.44" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -891,6 +891,49 @@
                                        Foreground="{DynamicResource TextSecBrush}"
                                        Text="{Binding DownloadPercentText}"/>
                         </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 下载代理 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,24" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="{DynamicResource StrProxySection}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource StrProxyMode}"
+                                       Foreground="{DynamicResource TextSecBrush}"
+                                       FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <ComboBox Grid.Column="1"
+                                      SelectedValue="{Binding ProxyMode}"
+                                      SelectedValuePath="Tag"
+                                      Background="{DynamicResource BgCardBrush}"
+                                      Foreground="{DynamicResource TextPrimaryBrush}"
+                                      BorderBrush="{DynamicResource BorderBrush}"
+                                      FontSize="12" Height="32">
+                                <ComboBoxItem Tag="none" Content="{DynamicResource StrProxyNone}" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                <ComboBoxItem Tag="http" Content="HTTP" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                <ComboBoxItem Tag="socks5" Content="SOCKS5" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                <ComboBoxItem Tag="urlprefix" Content="URL Prefix" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            </ComboBox>
+                        </Grid>
+                        <!-- 代理地址输入框（模式为 none 时隐藏） -->
+                        <TextBox Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}"
+                                 Visibility="{Binding HasProxy, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"
+                                 Background="{DynamicResource BgCardBrush}"
+                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}"
+                                 FontSize="12" Height="32" Padding="8,4"
+                                 Margin="0,0,0,8"/>
+                        <TextBlock Text="{DynamicResource StrProxyHint}"
+                                   Foreground="{DynamicResource TextSecBrush}"
+                                   FontSize="11" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
 

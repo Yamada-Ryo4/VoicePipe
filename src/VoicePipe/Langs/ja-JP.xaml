@@ -65,6 +65,10 @@
     <sys:String x:Key="StrUpdatePrompt">新しいバージョン {0} が見つかりました（現在 {1}）。今すぐ更新しますか？</sys:String>
     <sys:String x:Key="StrUpdateDownloaded">ダウンロード完了。今すぐ更新しますか？VoicePipe を終了して更新します。</sys:String>
     <sys:String x:Key="StrUpdateReady">インストーラー準備完了</sys:String>
+    <sys:String x:Key="StrProxySection">ダウンロードプロキシ</sys:String>
+    <sys:String x:Key="StrProxyMode">プロキシモード</sys:String>
+    <sys:String x:Key="StrProxyNone">なし（直接接続）</sys:String>
+    <sys:String x:Key="StrProxyHint">HTTP/SOCKS5: アドレス:ポートを入力（例: 127.0.0.1:7890）。URL Prefix: プレフィックスURLを入力（例: https://ghproxy.com）、スラッシュは自動結合</sys:String>
     <sys:String x:Key="StrGuideTitle">VoicePipe へようこそ</sys:String>
     <sys:String x:Key="StrGuideSubtitle">アプリの音声とマイクをミックスして音声アプリへ送ります。3 ステップで設定：</sys:String>
     <sys:String x:Key="StrGuideStep1">マイク：普段話すマイクを選びます。</sys:String>

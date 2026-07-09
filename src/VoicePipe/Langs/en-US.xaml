@@ -65,6 +65,10 @@
     <sys:String x:Key="StrUpdatePrompt">New version {0} found (current {1}). Update now?</sys:String>
     <sys:String x:Key="StrUpdateDownloaded">Download complete. Install now? VoicePipe will close to update.</sys:String>
     <sys:String x:Key="StrUpdateReady">Installer ready</sys:String>
+    <sys:String x:Key="StrProxySection">Download Proxy</sys:String>
+    <sys:String x:Key="StrProxyMode">Proxy Mode</sys:String>
+    <sys:String x:Key="StrProxyNone">None (Direct)</sys:String>
+    <sys:String x:Key="StrProxyHint">HTTP/SOCKS5: enter address:port (e.g. 127.0.0.1:7890). URL Prefix: enter prefix URL (e.g. https://ghproxy.com), slashes auto-joined</sys:String>
     <sys:String x:Key="StrGuideTitle">Welcome to VoicePipe</sys:String>
     <sys:String x:Key="StrGuideSubtitle">Mix an app's audio with your mic and send it to your voice app. Three steps to set up:</sys:String>
     <sys:String x:Key="StrGuideStep1">Microphone: pick the one you normally speak into.</sys:String>
