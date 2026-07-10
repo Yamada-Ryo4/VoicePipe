@@ -122,11 +122,35 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _startMinimized;
     [ObservableProperty] private bool _autoCheckUpdate;
 
-    // ★ 下载代理设置
-    [ObservableProperty] private string _proxyMode = "none";     // none|http|socks5|urlprefix
-    [ObservableProperty] private string _proxyAddress = "";      // 代理地址或 URL 前缀
+    // ★ 下载代理设置：每种模式独立地址，切换时互不干扰
+    [ObservableProperty] private string _proxyMode = "none";
+    [ObservableProperty] private string _proxyHttpAddr = "";
+    [ObservableProperty] private string _proxySocksAddr = "";
+    [ObservableProperty] private string _proxyUrlPrefix = "";
 
-    // ★ 代理地址输入框可见性（ProxyMode != "none" 时显示）
+    // ★ 输入框绑定用：根据当前模式返回/设置对应地址
+    public string ProxyAddress
+    {
+        get => ProxyMode switch
+        {
+            "http" => ProxyHttpAddr,
+            "socks5" => ProxySocksAddr,
+            "urlprefix" => ProxyUrlPrefix,
+            _ => ""
+        };
+        set
+        {
+            switch (ProxyMode)
+            {
+                case "http": ProxyHttpAddr = value; break;
+                case "socks5": ProxySocksAddr = value; break;
+                case "urlprefix": ProxyUrlPrefix = value; break;
+            }
+            OnPropertyChanged(nameof(ProxyAddress));
+        }
+    }
+
+    // ★ 派生属性控制 UI 显隐
     public bool HasProxy => !string.Equals(ProxyMode, "none", StringComparison.OrdinalIgnoreCase);
     public bool IsProxyHttp => string.Equals(ProxyMode, "http", StringComparison.OrdinalIgnoreCase);
     public bool IsProxySocks5 => string.Equals(ProxyMode, "socks5", StringComparison.OrdinalIgnoreCase);
@@ -642,8 +666,16 @@ public partial class MainViewModel : ObservableObject
         AutoCheckUpdate = _settings.AutoCheckUpdate;
         // ★ 加载代理设置并应用到 UpdateService
         ProxyMode = _settings.ProxyMode;
-        ProxyAddress = _settings.ProxyAddress;
-        _updateService.ApplyProxySettings(_settings.ProxyMode, _settings.ProxyAddress);
+        ProxyHttpAddr = _settings.ProxyHttpAddr;
+        ProxySocksAddr = _settings.ProxySocksAddr;
+        ProxyUrlPrefix = _settings.ProxyUrlPrefix;
+        _updateService.ApplyProxySettings(_settings.ProxyMode, ProxyAddress);
+        // ★ 通知所有派生属性（_settingsLoading=true 时 OnProxyModeChanged 被跳过，这里手动通知）
+        OnPropertyChanged(nameof(HasProxy));
+        OnPropertyChanged(nameof(IsProxyHttp));
+        OnPropertyChanged(nameof(IsProxySocks5));
+        OnPropertyChanged(nameof(IsProxyUrlPrefix));
+        OnPropertyChanged(nameof(ProxyAddress));
         MuteHotkey = _settings.MuteHotkey;
         PipelineHotkey = _settings.PipelineHotkey;
         _settingsLoading = false;
@@ -779,28 +811,41 @@ public partial class MainViewModel : ObservableObject
         if (_settingsLoading) return;
         if (string.Equals(_settings.ProxyMode, value, StringComparison.OrdinalIgnoreCase)) return;
         _settings.ProxyMode = value;
-        _updateService.ApplyProxySettings(value, _settings.ProxyAddress);
+        // ★ 切换模式时用新模式的地址更新 UpdateService
+        string addr = value switch
+        {
+            "http" => ProxyHttpAddr,
+            "socks5" => ProxySocksAddr,
+            "urlprefix" => ProxyUrlPrefix,
+            _ => ""
+        };
+        _updateService.ApplyProxySettings(value, addr);
         Serilog.Log.Information("下载代理模式: {Mode}", value);
-        // 通知所有派生属性
+        // 通知所有派生属性（包括 ProxyAddress，让输入框显示新模式的地址）
         OnPropertyChanged(nameof(HasProxy));
         OnPropertyChanged(nameof(IsProxyHttp));
         OnPropertyChanged(nameof(IsProxySocks5));
         OnPropertyChanged(nameof(IsProxyUrlPrefix));
+        OnPropertyChanged(nameof(ProxyAddress));
         PersistSettings();
     }
 
-    partial void OnProxyAddressChanged(string value)
-    {
-        // ★ 不在每次按键时触发 ApplyProxySettings（会重建 HttpClient + 刷日志 + 存盘）。
-        //   用户点"保存"按钮才生效（SaveProxyCommand）。
-    }
+    // ★ OnProxyAddressChanged 不存在了（ProxyAddress 是手写属性，不走 ObservableProperty）
+    // 保存按钮处理
 
     [RelayCommand]
     private void SaveProxy()
     {
-        _settings.ProxyAddress = ProxyAddress;
-        _updateService.ApplyProxySettings(_settings.ProxyMode, ProxyAddress);
-        Serilog.Log.Information("下载代理地址已保存: {Addr} (模式={Mode})", ProxyAddress, _settings.ProxyMode);
+        // ★ 按当前模式存到对应字段 + 更新 UpdateService
+        string addr = ProxyAddress;
+        switch (ProxyMode)
+        {
+            case "http": _settings.ProxyHttpAddr = addr; break;
+            case "socks5": _settings.ProxySocksAddr = addr; break;
+            case "urlprefix": _settings.ProxyUrlPrefix = addr; break;
+        }
+        _updateService.ApplyProxySettings(ProxyMode, addr);
+        Serilog.Log.Information("下载代理地址已保存: {Addr} (模式={Mode})", addr, ProxyMode);
         PersistSettings();
     }
 

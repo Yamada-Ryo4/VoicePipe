@@ -61,9 +61,11 @@ public class AppSettings
     // MicMuted is intentionally NOT persisted (session-only). App starts unmuted.
 
     // 下载代理：ProxyMode = "none" | "http" | "socks5" | "urlprefix"
-    // ProxyAddress = HTTP/SOCKS5 代理地址（如 127.0.0.1:7890）或 URL 前缀（如 https://ghproxy.com）
-    public string ProxyMode    { get; set; } = "none";
-    public string ProxyAddress { get; set; } = "";
+    // 每种模式独立存地址，切换模式时互不干扰
+    public string ProxyMode      { get; set; } = "none";
+    public string ProxyHttpAddr  { get; set; } = "";  // 如 127.0.0.1:7890
+    public string ProxySocksAddr { get; set; } = "";  // 如 127.0.0.1:1080
+    public string ProxyUrlPrefix { get; set; } = "";  // 如 https://ghproxy.com
 
     private static string GetFilePath()
     {
