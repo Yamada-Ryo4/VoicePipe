@@ -72,6 +72,7 @@
     <sys:String x:Key="StrProxyHintHttp">Enter address:port, e.g. 127.0.0.1:7890</sys:String>
     <sys:String x:Key="StrProxyHintSocks5">Enter address:port, e.g. 127.0.0.1:1080</sys:String>
     <sys:String x:Key="StrProxyHintUrl">Enter proxy prefix URL, auto-joined to GitHub download URL. Slashes handled automatically.</sys:String>
+    <sys:String x:Key="StrProxySave">Save</sys:String>
     <sys:String x:Key="StrGuideTitle">Welcome to VoicePipe</sys:String>
     <sys:String x:Key="StrGuideSubtitle">Mix an app's audio with your mic and send it to your voice app. Three steps to set up:</sys:String>
     <sys:String x:Key="StrGuideStep1">Microphone: pick the one you normally speak into.</sys:String>

@@ -85,7 +85,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.48" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.49" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -926,130 +926,71 @@
                                          Click="ProxyMode_Click" Tag="urlprefix"/>
                         </WrapPanel>
 
-                        <!-- ★ 4 个模式各自独立面板，通过 Style DataTrigger 按 ProxyMode 切换 Visibility -->
-
-                        <!-- None 模式：只显示提示 -->
-                        <StackPanel Margin="0,0,0,0">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ProxyMode}" Value="none">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <TextBlock Text="{DynamicResource StrProxyHintNone}"
-                                       Foreground="{DynamicResource TextSecBrush}"
-                                       FontSize="11" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <!-- HTTP 模式：http:// 前缀 + 输入框 -->
-                        <StackPanel Margin="0,0,0,0">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ProxyMode}" Value="http">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <Border Background="{DynamicResource BgDeepBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1" CornerRadius="6" Margin="0,0,0,6">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="http://"
-                                               Foreground="{DynamicResource TextSecBrush}"
-                                               FontSize="12" FontFamily="Consolas"
-                                               VerticalAlignment="Center" Padding="10,0,8,0"/>
-                                    <TextBox Grid.Column="1"
-                                             Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}"
-                                             Background="Transparent" BorderThickness="0"
-                                             Foreground="{DynamicResource TextPrimaryBrush}"
-                                             FontSize="12" FontFamily="Consolas"
-                                             Height="34" Padding="4,4,10,4"
-                                             VerticalContentAlignment="Center"
-                                             CaretBrush="{DynamicResource AccentBrush}"/>
-                                </Grid>
-                            </Border>
+                        <!-- 代理地址输入框 + 保存按钮（None 模式隐藏） -->
+                        <StackPanel Visibility="{Binding HasProxy, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}">
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <!-- 圆角输入框 + 协议前缀 -->
+                                <Border Grid.Column="0" Background="{DynamicResource BgDeepBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1" CornerRadius="6">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <!-- 协议前缀（HTTP/SOCKS5 模式显示，URL Prefix 模式隐藏） -->
+                                        <TextBlock Grid.Column="0"
+                                                   Foreground="{DynamicResource TextSecBrush}"
+                                                   FontSize="12" FontFamily="Consolas"
+                                                   VerticalAlignment="Center" Padding="10,0,8,0"
+                                                   Visibility="{Binding IsProxyHttp, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"
+                                                   Text="http://"/>
+                                        <TextBlock Grid.Column="0"
+                                                   Foreground="{DynamicResource TextSecBrush}"
+                                                   FontSize="12" FontFamily="Consolas"
+                                                   VerticalAlignment="Center" Padding="10,0,8,0"
+                                                   Visibility="{Binding IsProxySocks5, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"
+                                                   Text="socks5://"/>
+                                        <TextBox Grid.Column="1"
+                                                 Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}"
+                                                 Background="Transparent" BorderThickness="0"
+                                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                                 FontSize="12" FontFamily="Consolas"
+                                                 Height="34" Padding="4,4,10,4"
+                                                 VerticalContentAlignment="Center"
+                                                 CaretBrush="{DynamicResource AccentBrush}"/>
+                                    </Grid>
+                                </Border>
+                                <!-- 保存按钮 -->
+                                <Button Grid.Column="1" Content="{DynamicResource StrProxySave}"
+                                        Style="{StaticResource GhostButton}"
+                                        FontSize="12" Margin="8,0,0,0" Padding="16,6"
+                                        Command="{Binding SaveProxyCommand}"/>
+                            </Grid>
+                            <!-- 提示文字（随模式变） -->
                             <TextBlock Text="{DynamicResource StrProxyHintHttp}"
                                        Foreground="{DynamicResource TextSecBrush}"
-                                       FontSize="11" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <!-- SOCKS5 模式：socks5:// 前缀 + 输入框 -->
-                        <StackPanel Margin="0,0,0,0">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ProxyMode}" Value="socks5">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <Border Background="{DynamicResource BgDeepBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1" CornerRadius="6" Margin="0,0,0,6">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="socks5://"
-                                               Foreground="{DynamicResource TextSecBrush}"
-                                               FontSize="12" FontFamily="Consolas"
-                                               VerticalAlignment="Center" Padding="10,0,8,0"/>
-                                    <TextBox Grid.Column="1"
-                                             Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}"
-                                             Background="Transparent" BorderThickness="0"
-                                             Foreground="{DynamicResource TextPrimaryBrush}"
-                                             FontSize="12" FontFamily="Consolas"
-                                             Height="34" Padding="4,4,10,4"
-                                             VerticalContentAlignment="Center"
-                                             CaretBrush="{DynamicResource AccentBrush}"/>
-                                </Grid>
-                            </Border>
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Visibility="{Binding IsProxyHttp, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"/>
                             <TextBlock Text="{DynamicResource StrProxyHintSocks5}"
                                        Foreground="{DynamicResource TextSecBrush}"
-                                       FontSize="11" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <!-- URL Prefix 模式：完整 URL 输入框 -->
-                        <StackPanel Margin="0,0,0,0">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ProxyMode}" Value="urlprefix">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <Border Background="{DynamicResource BgDeepBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1" CornerRadius="6" Margin="0,0,0,6">
-                                <TextBox Text="{Binding ProxyAddress, UpdateSourceTrigger=PropertyChanged}"
-                                         Background="Transparent" BorderThickness="0"
-                                         Foreground="{DynamicResource TextPrimaryBrush}"
-                                         FontSize="12" FontFamily="Consolas"
-                                         Height="34" Padding="10,4"
-                                         VerticalContentAlignment="Center"
-                                         CaretBrush="{DynamicResource AccentBrush}"/>
-                            </Border>
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Visibility="{Binding IsProxySocks5, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"/>
                             <TextBlock Text="{DynamicResource StrProxyHintUrl}"
                                        Foreground="{DynamicResource TextSecBrush}"
-                                       FontSize="11" TextWrapping="Wrap"/>
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Visibility="{Binding IsProxyUrlPrefix, Converter={x:Static ui:BoolToVisibilityConverter.Instance}}"/>
                         </StackPanel>
+
+                        <!-- None 模式提示 -->
+                        <TextBlock Text="{DynamicResource StrProxyHintNone}"
+                                   Foreground="{DynamicResource TextSecBrush}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Visibility="{Binding HasProxy, Converter={x:Static ui:BoolToInvVisibilityConverter.Instance}}"/>
                     </StackPanel>
                 </Border>
 

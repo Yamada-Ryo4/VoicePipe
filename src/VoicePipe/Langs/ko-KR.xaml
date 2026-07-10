@@ -72,6 +72,7 @@
     <sys:String x:Key="StrProxyHintHttp">주소:포트 입력 (예: 127.0.0.1:7890)</sys:String>
     <sys:String x:Key="StrProxyHintSocks5">주소:포트 입력 (예: 127.0.0.1:1080)</sys:String>
     <sys:String x:Key="StrProxyHintUrl">프록시 접두사 URL 입력. GitHub 다운로드 URL에 자동 결합. 슬래시 자동 처리.</sys:String>
+    <sys:String x:Key="StrProxySave">저장</sys:String>
     <sys:String x:Key="StrGuideTitle">VoicePipe에 오신 것을 환영합니다</sys:String>
     <sys:String x:Key="StrGuideSubtitle">앱 소리와 마이크를 믹스해 음성 앱으로 보냅니다. 세 단계로 설정:</sys:String>
     <sys:String x:Key="StrGuideStep1">마이크: 평소 말하는 마이크를 선택하세요.</sys:String>

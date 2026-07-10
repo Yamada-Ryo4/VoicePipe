@@ -128,6 +128,9 @@ public partial class MainViewModel : ObservableObject
 
     // ★ 代理地址输入框可见性（ProxyMode != "none" 时显示）
     public bool HasProxy => !string.Equals(ProxyMode, "none", StringComparison.OrdinalIgnoreCase);
+    public bool IsProxyHttp => string.Equals(ProxyMode, "http", StringComparison.OrdinalIgnoreCase);
+    public bool IsProxySocks5 => string.Equals(ProxyMode, "socks5", StringComparison.OrdinalIgnoreCase);
+    public bool IsProxyUrlPrefix => string.Equals(ProxyMode, "urlprefix", StringComparison.OrdinalIgnoreCase);
 
     // 热键绑定 + 冲突标志
     [ObservableProperty] private HotkeyBinding _muteHotkey;
@@ -774,21 +777,30 @@ public partial class MainViewModel : ObservableObject
     partial void OnProxyModeChanged(string value)
     {
         if (_settingsLoading) return;
-        // ★ 防止 RadioButton 切换时多次触发同一值
         if (string.Equals(_settings.ProxyMode, value, StringComparison.OrdinalIgnoreCase)) return;
         _settings.ProxyMode = value;
         _updateService.ApplyProxySettings(value, _settings.ProxyAddress);
         Serilog.Log.Information("下载代理模式: {Mode}", value);
+        // 通知所有派生属性
         OnPropertyChanged(nameof(HasProxy));
+        OnPropertyChanged(nameof(IsProxyHttp));
+        OnPropertyChanged(nameof(IsProxySocks5));
+        OnPropertyChanged(nameof(IsProxyUrlPrefix));
         PersistSettings();
     }
 
     partial void OnProxyAddressChanged(string value)
     {
-        if (_settingsLoading) return;
-        _settings.ProxyAddress = value;
-        _updateService.ApplyProxySettings(_settings.ProxyMode, value);
-        Serilog.Log.Information("下载代理地址: {Addr}", value);
+        // ★ 不在每次按键时触发 ApplyProxySettings（会重建 HttpClient + 刷日志 + 存盘）。
+        //   用户点"保存"按钮才生效（SaveProxyCommand）。
+    }
+
+    [RelayCommand]
+    private void SaveProxy()
+    {
+        _settings.ProxyAddress = ProxyAddress;
+        _updateService.ApplyProxySettings(_settings.ProxyMode, ProxyAddress);
+        Serilog.Log.Information("下载代理地址已保存: {Addr} (模式={Mode})", ProxyAddress, _settings.ProxyMode);
         PersistSettings();
     }
 

@@ -72,6 +72,7 @@
     <sys:String x:Key="StrProxyHintHttp">アドレス:ポートを入力（例: 127.0.0.1:7890）</sys:String>
     <sys:String x:Key="StrProxyHintSocks5">アドレス:ポートを入力（例: 127.0.0.1:1080）</sys:String>
     <sys:String x:Key="StrProxyHintUrl">プロキシプレフィックスURLを入力。GitHubダウンロードURLに自動結合。スラッシュは自動処理。</sys:String>
+    <sys:String x:Key="StrProxySave">保存</sys:String>
     <sys:String x:Key="StrGuideTitle">VoicePipe へようこそ</sys:String>
     <sys:String x:Key="StrGuideSubtitle">アプリの音声とマイクをミックスして音声アプリへ送ります。3 ステップで設定：</sys:String>
     <sys:String x:Key="StrGuideStep1">マイク：普段話すマイクを選びます。</sys:String>

@@ -72,6 +72,7 @@
     <sys:String x:Key="StrProxyHintHttp">填写 地址:端口，如 127.0.0.1:7890</sys:String>
     <sys:String x:Key="StrProxyHintSocks5">填写 地址:端口，如 127.0.0.1:1080</sys:String>
     <sys:String x:Key="StrProxyHintUrl">填写代理前缀地址，自动拼接到 GitHub 下载链接前。斜杠会自动处理。</sys:String>
+    <sys:String x:Key="StrProxySave">保存</sys:String>
     <sys:String x:Key="StrGuideTitle">欢迎使用 VoicePipe</sys:String>
     <sys:String x:Key="StrGuideSubtitle">把某个应用的声音和你的麦克风混合后送到语音软件。三步搞定：</sys:String>
     <sys:String x:Key="StrGuideStep1">麦克风：选你平时说话用的那个。</sys:String>
