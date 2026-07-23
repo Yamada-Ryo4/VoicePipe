@@ -17,6 +17,12 @@ public class PipelineManager : IDisposable
     private volatile int _currentPid;
     private MicCapturer? _micCapture;
     private VirtualMicWriter? _writer;
+    private readonly SystemRenderReferenceManager _aecReferences = new();
+
+    public PipelineManager()
+    {
+        _mixer.SetAecReferenceProvider(_aecReferences);
+    }
 
     // ★ 串行化 StartAsync/StopAsync，防止运行中快速切换音源/麦克风时
     // 两次 Start 重叠创建出两个 Writer / 竞态。
@@ -63,6 +69,34 @@ public class PipelineManager : IDisposable
         get => _mixer.DenoiseStrength;
         set => _mixer.DenoiseStrength = value;
     }
+
+    public bool EchoCancellationEnabled
+    {
+        get => _mixer.EchoCancellationEnabled;
+        set
+        {
+            _mixer.EchoCancellationEnabled = value;
+            // 参考通道始终保持运行（只要有麦克风），即使 AEC 开关关闭。
+            // 这样 SpeexDSP 在后台持续适应，用户开/关 AEC 时是即时切换。
+            _aecReferences.SetEnabled(_micCapture != null);
+
+            // 如果当前处于麦克风直通模式（StopAppOnly 已暂停 loopback），
+            // 开启 AEC 时需要恢复 loopback 运行（仅喂 AEC 参考，不混入输出）。
+            if (value && _currentPid == 0)
+            {
+                foreach (var capturer in _loopbackCache.Values)
+                    capturer.Paused = false;
+            }
+            else if (!value && _currentPid == 0)
+            {
+                // 关闭 AEC 时，如果还在直通模式，重新暂停 loopback（省 CPU）
+                foreach (var capturer in _loopbackCache.Values)
+                    capturer.Paused = true;
+            }
+        }
+    }
+
+    public bool EchoCancellationAvailable => _mixer.EchoCancellationAvailable;
 
     // ── 本地监听（耳机回放）pass-through。独立于 VB-Cable 路径，绝不影响其 10ms 延迟。──
 
@@ -182,7 +216,12 @@ public class PipelineManager : IDisposable
             capturer.SamplesAvailable += (_, args) =>
             {
                 if (_currentPid == pid)
+                {
                     _mixer.FeedApp(args.Samples, args.Count);
+                }
+                // AEC 参考始终喂入（即使切到麦克风直通、_currentPid=0 不混入输出时），
+                // 因为设备级 loopback 可能失效，进程级是 USB 音箱等设备的唯一参考来源。
+                _aecReferences.FeedAppReference(args.Samples, args.Count);
             };
 
             capturer.CaptureFailed += (_, msg) => CaptureFailed?.Invoke(this, msg);
@@ -215,12 +254,14 @@ public class PipelineManager : IDisposable
         // 麦克风：复用就跳过整次 Start（几毫秒级；否则才重建）
         if (!reuseMic)
         {
+            _mixer.ResetMicProcessing();
             Serilog.Log.Information("StartAsync: 创建新 MicCapturer Mic={Mic}", micId);
             _micCapture = new MicCapturer();
             _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
             _micCapture.Start(micId);
             Serilog.Log.Information("StartAsync: MicCapturer Start 已调用");
         }
+        _aecReferences.SetEnabled(true); // 始终保持参考通道运行，AEC 后台持续适应
 
         // ★ 本地监听：若主开关开着，启动独立监听输出链（不影响 VB-Cable）
         //   用 EnsureStarted 幂等启动，已在跑就直接复用，避免每次 StartAsync 都 Stop+New 一次（~50ms）
@@ -280,10 +321,12 @@ public class PipelineManager : IDisposable
 
             if (!reuseMic)
             {
+                _mixer.ResetMicProcessing();
                 _micCapture = new MicCapturer();
                 _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
                 _micCapture.Start(micId);
             }
+            _aecReferences.SetEnabled(true); // 始终保持参考通道运行，AEC 后台持续适应
 
             _monitor ??= new MonitorOutput(_mixer);
             _monitor.TargetDeviceId = _monitorDeviceId;
@@ -342,6 +385,7 @@ public class PipelineManager : IDisposable
             if (oldMic != null)
                 _ = Task.Run(() => { try { oldMic.Dispose(); } catch { } });
             _currentPid = 0;
+            _aecReferences.SetEnabled(false);
             // ★ 清波形/频谱，避免冻结在最后一帧（B：完全停止后显示平线）
             WaveformAnalyzer.Clear();
             SpectrumAnalyzer.Clear();
@@ -357,13 +401,59 @@ public class PipelineManager : IDisposable
     /// <summary>
     /// 仅停止 App 音频混入，保留麦克风直通到虚拟麦克风。
     /// Writer 和 MicCapturer 继续运行，只是不再混入应用声音。
+    /// 但如果 AEC 开启，保持进程级 loopback 运行（仅喂 AEC 参考，不混入输出），
+    /// 因为设备级 loopback 可能失效（如 USB 音箱），进程级是唯一的参考来源。
     /// </summary>
     public void StopAppOnly()
     {
         _currentPid = 0;
-        // ★ 暂停所有 loopback（App 不再混入），但 Writer/Mic 继续直通
+        bool aecActive = _mixer.EchoCancellationEnabled;
+        // ★ AEC 关闭时暂停所有 loopback；AEC 开启时保持运行（仅喂 AEC 参考，_currentPid=0 阻止混入输出）
         foreach (var capturer in _loopbackCache.Values)
-            capturer.Paused = true;
+            capturer.Paused = !aecActive;
+    }
+
+    /// <summary>
+    /// 直通模式下选新音频源时恢复 loopback 运行（仅喂 AEC 参考，不混入输出）。
+    /// 之前 StopAppOnly 可能暂停了 loopback，选新源时需要恢复，否则 AEC 参考无数据。
+    /// 如果目标 PID 还没有 capturer，会创建一个新的。
+    /// </summary>
+    public async void ResumeLoopbackForAec(int targetPid)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            // 如果该 PID 还没有 capturer，创建一个
+            if (!_loopbackCache.TryGetValue(targetPid, out var capturer))
+            {
+                capturer = new LoopbackCapturer();
+                capturer.Paused = false;
+                int pid = targetPid;
+                capturer.SamplesAvailable += (_, args) =>
+                {
+                    if (_currentPid == pid)
+                        _mixer.FeedApp(args.Samples, args.Count);
+                    _aecReferences.FeedAppReference(args.Samples, args.Count);
+                };
+                capturer.CaptureFailed += (_, msg) => CaptureFailed?.Invoke(this, msg);
+                _loopbackCache[targetPid] = capturer;
+                await capturer.StartAsync(targetPid);
+                Serilog.Log.Information("ResumeLoopbackForAec: 创建新 LoopbackCapturer PID={Pid}", targetPid);
+            }
+            else
+            {
+                capturer.Paused = false;
+                Serilog.Log.Information("ResumeLoopbackForAec: 恢复 LoopbackCapturer PID={Pid}", targetPid);
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "ResumeLoopbackForAec: 恢复失败 PID={Pid}", targetPid);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <summary>
@@ -400,10 +490,12 @@ public class PipelineManager : IDisposable
             _micCapture = null;
             if (oldMic != null)
                 _ = Task.Run(() => { try { oldMic.Dispose(); } catch { } });
+            _mixer.ResetMicProcessing();
             _micCapture = new MicCapturer();
             _micCapture.SamplesAvailable += (_, args) => _mixer.FeedMic(args.Samples, args.Count, args.Format);
             _micCapture.Start(micId);
         }
+        _aecReferences.SetEnabled(_micCapture != null); // 有麦克风就保持参考运行，AEC 后台持续适应
         // ★ 不论新建还是复用，只要 standalone 监听占用了麦克风，就告知 PeakMonitor
         //   （其 meter 已被唤醒），避免 PeakMonitor 再开一条静默监听抢同一设备。
         if (!string.IsNullOrEmpty(micId))
@@ -431,6 +523,7 @@ public class PipelineManager : IDisposable
             _ = Task.Run(() => { try { oldMic.Dispose(); } catch { } });
         // ★ 释放麦克风占用，PeakMonitor 可恢复对选中麦克风的静默监听测电平
         PeakMonitor.SetRunningMic(null);
+        _aecReferences.SetEnabled(false);
         WaveformAnalyzer.Clear();
         SpectrumAnalyzer.Clear();
     }
@@ -485,7 +578,9 @@ public class PipelineManager : IDisposable
         _micCapture?.Dispose();
         _micCapture = null;
 
-        // ★ 释放混音器持有的 RNNoise 原生状态，避免非托管内存泄漏 (B1)
+        try { _aecReferences.Dispose(); } catch { }
+
+        // ★ 释放混音器持有的 AEC/RNNoise 原生状态，避免非托管内存泄漏
         try { _mixer.Dispose(); } catch { }
 
         _gate.Dispose();

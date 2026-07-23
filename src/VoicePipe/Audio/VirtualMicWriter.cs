@@ -26,6 +26,21 @@ public class VirtualMicWriter : IDisposable
     private static string? _cachedCableInputId;
     private static readonly object _cacheLock = new();
 
+    internal static bool IsCableInputEndpointName(string friendlyName)
+    {
+        if (string.IsNullOrWhiteSpace(friendlyName)) return false;
+
+        bool isVirtualCable =
+            friendlyName.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase);
+        bool isCableInput =
+            friendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase) ||
+            friendlyName.Contains("CABLE In", StringComparison.OrdinalIgnoreCase);
+        bool isCableOutput =
+            friendlyName.Contains("CABLE Output", StringComparison.OrdinalIgnoreCase);
+
+        return isVirtualCable && isCableInput && !isCableOutput;
+    }
+
     /// <summary>
     /// 初始化并启动输出。直接将 AudioMixEngine 作为数据源。
     /// </summary>
@@ -76,10 +91,10 @@ public class VirtualMicWriter : IDisposable
                 {
                     var dev = enumerator.GetDevice(cachedId);
                     if (dev != null && dev.State == DeviceState.Active &&
-                        dev.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
+                        IsCableInputEndpointName(dev.FriendlyName))
                     {
                         if (logFound)
-                            Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input（缓存命中） → {Name}", dev.FriendlyName);
+                            Serilog.Log.Information("VirtualMicWriter: 找到 VB-Cable 输出（缓存命中） → {Name} ({Id})", dev.FriendlyName, dev.ID);
                         // enumerator 统一交给下方 finally Dispose（NAudio 的 MMDevice 持有独立 COM 引用，
                         // 与 enumerator 解耦，Dispose enumerator 安全）。这里只 return dev。
                         return dev;
@@ -106,8 +121,7 @@ public class VirtualMicWriter : IDisposable
             {
                 // ★ 命中前不要提前 return：否则循环里此前遍历过的非命中设备不会被 Dispose（COM 泄漏，
                 //   且 IsCableInputAvailable 每 2 秒走一次会持续累积）。命中后保存、其余一律 Dispose。
-                if (match == null &&
-                    device.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
+                if (match == null && IsCableInputEndpointName(device.FriendlyName))
                 {
                     match = device; // 保留命中的，调用方负责 Dispose
                 }
@@ -121,7 +135,7 @@ public class VirtualMicWriter : IDisposable
             {
                 lock (_cacheLock) _cachedCableInputId = match.ID; // ★ 写缓存
                 if (logFound)
-                    Serilog.Log.Information("VirtualMicWriter: 找到 CABLE Input → {Name}", match.FriendlyName);
+                    Serilog.Log.Information("VirtualMicWriter: 找到 VB-Cable 输出 → {Name} ({Id})", match.FriendlyName, match.ID);
             }
 
             return match;

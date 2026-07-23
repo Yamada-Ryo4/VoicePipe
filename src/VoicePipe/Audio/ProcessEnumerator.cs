@@ -33,23 +33,27 @@ public class ProcessEnumerator
         var result = new List<ProcessInfo>();
         try
         {
+            // ★ 枚举所有 Active Render 设备的音频会话，而不只是默认设备。
+            //   某些进程可能输出到非默认设备（如 USB 音箱、耳机），只查默认设备会漏掉它们。
             using var enumerator = new MMDeviceEnumerator();
-            using var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-            var sessionManager = device.AudioSessionManager;
-            var sessions = sessionManager.Sessions;
-
-            // 一次性快照：PID → PPID（父进程）、PID → 进程名。用于把音频会话进程归并到根进程。
-            var (ppidMap, nameMap) = SnapshotProcesses();
-
-            // 先收集所有「有音频会话」的 PID
+            var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
             var audioPids = new List<int>();
-            for (int i = 0; i < sessions.Count; i++)
+            for (int d = 0; d < devices.Count; d++)
             {
-                using var session = sessions[i];
-                var pid = (int)session.GetProcessID;
-                if (pid == 0) continue; // 跳过系统聚合会话
-                if (!audioPids.Contains(pid)) audioPids.Add(pid);
+                using var device = devices[d];
+                var sessionManager = device.AudioSessionManager;
+                var sessions = sessionManager.Sessions;
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    using var session = sessions[i];
+                    var pid = (int)session.GetProcessID;
+                    if (pid == 0) continue; // 跳过系统聚合会话
+                    if (!audioPids.Contains(pid)) audioPids.Add(pid);
+                }
             }
+
+            // 一次性快照：PID -> PPID（父进程）、PID -> 进程名。用于把音频会话进程归并到根进程。
+            var (ppidMap, nameMap) = SnapshotProcesses();
 
             // 按进程名归并：同名 app 只保留一条，代表 PID = 该名字的根进程（顺父链向上找最顶层同名进程）
             var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

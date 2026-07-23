@@ -39,6 +39,8 @@
     <sys:String x:Key="StrNoiseGateEnable">启用降噪（仅麦克风）</sys:String>
     <sys:String x:Key="StrNoiseGateThreshold">阈值</sys:String>
     <sys:String x:Key="StrDenoiseStrength">强度</sys:String>
+    <sys:String x:Key="StrEchoCancellation">消除扬声器回声</sys:String>
+    <sys:String x:Key="StrEchoCancellationTooltip">自动监听所有真实播放设备的系统声音，仅从所选麦克风中消除扬声器拾音。麦克风直通时也生效，不会把监听到的声音混入输出。</sys:String>
     <sys:String x:Key="StrMonitor">本地监听</sys:String>
     <sys:String x:Key="StrMonitorEnable">开启监听</sys:String>
     <sys:String x:Key="StrMonitorApp">监听 App 音频</sys:String>

@@ -39,6 +39,8 @@
     <sys:String x:Key="StrNoiseGateEnable">ノイズ低減を有効化（マイクのみ）</sys:String>
     <sys:String x:Key="StrNoiseGateThreshold">しきい値</sys:String>
     <sys:String x:Key="StrDenoiseStrength">強度</sys:String>
+    <sys:String x:Key="StrEchoCancellation">スピーカーのエコーを除去</sys:String>
+    <sys:String x:Key="StrEchoCancellationTooltip">実際のすべての再生デバイスを自動監視し、選択したマイクに回り込んだスピーカー音だけを除去します。マイクのパススルー中も動作し、参照音声を出力へ混ぜません。</sys:String>
     <sys:String x:Key="StrMonitor">ローカルモニター</sys:String>
     <sys:String x:Key="StrMonitorEnable">モニターを有効化</sys:String>
     <sys:String x:Key="StrMonitorApp">アプリ音声をモニター</sys:String>

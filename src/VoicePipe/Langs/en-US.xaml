@@ -39,6 +39,8 @@
     <sys:String x:Key="StrNoiseGateEnable">Enable noise reduction (microphone only)</sys:String>
     <sys:String x:Key="StrNoiseGateThreshold">Threshold</sys:String>
     <sys:String x:Key="StrDenoiseStrength">Strength</sys:String>
+    <sys:String x:Key="StrEchoCancellation">Remove speaker echo</sys:String>
+    <sys:String x:Key="StrEchoCancellationTooltip">Automatically monitors all real playback devices and removes their acoustic pickup only from the selected microphone. Works in microphone passthrough and never mixes the reference audio into the output.</sys:String>
     <sys:String x:Key="StrMonitor">Local Monitor</sys:String>
     <sys:String x:Key="StrMonitorEnable">Enable monitoring</sys:String>
     <sys:String x:Key="StrMonitorApp">Monitor app audio</sys:String>

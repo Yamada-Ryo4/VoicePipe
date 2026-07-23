@@ -39,6 +39,8 @@
     <sys:String x:Key="StrNoiseGateEnable">노이즈 제거 활성화 (마이크 전용)</sys:String>
     <sys:String x:Key="StrNoiseGateThreshold">임계값</sys:String>
     <sys:String x:Key="StrDenoiseStrength">강도</sys:String>
+    <sys:String x:Key="StrEchoCancellation">스피커 에코 제거</sys:String>
+    <sys:String x:Key="StrEchoCancellationTooltip">모든 실제 재생 장치의 시스템 소리를 자동으로 모니터링하고 선택한 마이크로 유입된 스피커 소리만 제거합니다. 마이크 패스스루에서도 작동하며 참조 오디오는 출력에 섞이지 않습니다.</sys:String>
     <sys:String x:Key="StrMonitor">로컬 모니터링</sys:String>
     <sys:String x:Key="StrMonitorEnable">모니터링 켜기</sys:String>
     <sys:String x:Key="StrMonitorApp">앱 오디오 모니터링</sys:String>

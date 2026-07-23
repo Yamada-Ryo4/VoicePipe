@@ -9,7 +9,8 @@
         Background="{DynamicResource BgDeepBrush}"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        ManipulationBoundaryFeedback="Window_ManipulationBoundaryFeedback">
 
     <Window.DataContext>
         <vm:MainViewModel/>
@@ -85,7 +86,7 @@
                 <StackPanel Grid.Column="0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                         <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">VoicePipe</TextBlock>
-                        <TextBlock Text="v1.2.50" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
+                        <TextBlock Text="v1.2.51" FontSize="11" Foreground="{DynamicResource TextSecBrush}"
                                    VerticalAlignment="Bottom" Margin="8,0,0,4"/>
                     </StackPanel>
                     <TextBlock Text="{DynamicResource StrSubtitle}"
@@ -142,6 +143,7 @@
         <!-- VerticalScrollBarVisibility=Visible：常显滚动条，使内容区宽度恒定。
              否则展开卡片导致内容变高、滚动条 Auto 出现时会让内容区缩 6px，所有滑块 thumb 跟着抖一下。 -->
         <ScrollViewer x:Name="MainContentView" Grid.Row="1" VerticalScrollBarVisibility="Visible" Padding="0,0,2,0"
+                      PanningMode="VerticalOnly"
                       RenderTransformOrigin="0.5,0.5">
             <ScrollViewer.RenderTransform>
                 <TranslateTransform x:Name="MainContentTransform" X="0"/>
@@ -627,6 +629,19 @@
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"/>
                         </Grid>
+
+                        <!-- 一键系统级 AEC：自动监听所有真实播放端点，不向用户暴露设备选择。 -->
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{DynamicResource StrEchoCancellation}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="12" VerticalAlignment="Center"/>
+                            <CheckBox Grid.Column="1" IsChecked="{Binding EchoCancellationEnabled, Mode=TwoWay}"
+                                      ToolTip="{DynamicResource StrEchoCancellationTooltip}"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -699,6 +714,7 @@
 
         <!-- ══════════════ SETTINGS VIEW (主页面内嵌) ══════════════ -->
         <ScrollViewer x:Name="SettingsView" Grid.Row="1" VerticalScrollBarVisibility="Visible" Padding="0,0,2,0"
+                      PanningMode="VerticalOnly"
                       Visibility="Collapsed"
                       RenderTransformOrigin="0.5,0.5">
             <ScrollViewer.RenderTransform>
@@ -815,6 +831,26 @@
                                   Foreground="{DynamicResource TextPrimaryBrush}">
                             <TextBlock Text="{DynamicResource StrAutoCheckUpdate}"/>
                         </CheckBox>
+                    </StackPanel>
+                </Border>
+
+                <!-- 故障排除 -->
+                <Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="8" Margin="0,0,0,24" Padding="20,16">
+                    <StackPanel>
+                        <TextBlock Text="故障排除"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <TextBlock Text="如果 VB-Cable 设备失效或音频异常，可尝试重启 Windows 音频服务。"
+                                   Foreground="{DynamicResource TextSecBrush}"
+                                   FontSize="11" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                        <Button Style="{StaticResource GhostButton}"
+                                Padding="14,6" FontSize="12"
+                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                Content="重启音频服务"
+                                Command="{Binding RestartAudioServiceCommand}"
+                                HorizontalAlignment="Left"/>
                     </StackPanel>
                 </Border>
 

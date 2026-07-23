@@ -149,9 +149,10 @@ public partial class MainWindow : Window
         {
             e.Cancel = true;
             Hide();
-            Serilog.Log.Information("窗口关闭→最小化到托盘（管线继续运行）");
+            Serilog.Log.Information("窗口关闭->最小化到托盘（管线继续运行）");
             return;
         }
+
 
         // 完整清理：注销热键、清理管线、释放托盘
         Serilog.Log.Information("应用退出，开始清理");
@@ -165,6 +166,14 @@ public partial class MainWindow : Window
 
         // OnExplicitShutdown 下需要显式退出
         Application.Current.Shutdown();
+    }
+
+    /// <summary>
+    /// 触摸滑动到边界时阻止窗口抖动（rubber-band 反馈）。
+    /// </summary>
+    private void Window_ManipulationBoundaryFeedback(object sender, System.Windows.Input.ManipulationBoundaryFeedbackEventArgs e)
+    {
+        e.Handled = true;
     }
 
     // ── 系统托盘：还原 / 退出 ──

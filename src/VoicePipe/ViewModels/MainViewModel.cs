@@ -108,6 +108,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _noiseGateEnabled;
     [ObservableProperty] private float _noiseGateThreshold;
     [ObservableProperty] private float _denoiseStrength;
+    [ObservableProperty] private bool _echoCancellationEnabled;
 
     // 本地监听（耳机回放）：主开关 + 两个子开关
     [ObservableProperty] private bool _monitorEnabled;
@@ -195,12 +196,14 @@ public partial class MainViewModel : ObservableObject
         NoiseGateExpanded = _settings.NoiseGateExpanded;
         MicPassthrough = _settings.MicPassthrough; // ★ 恢复上次的"停止后保留麦克风直通"勾选状态
         ShowFirstRunGuide = !_settings.FirstRunDone; // 首次启动显示引导
+        EchoCancellationEnabled = _settings.EchoCancellationEnabled;
         _settingsLoading = false;
 
-        // 应用持久化的噪声门设置（默认关闭，关闭时为纯直通不影响音质）
+        // 应用持久化的麦克风处理设置（默认关闭时为纯直通）
         _pipeline.NoiseGateEnabled = _settings.NoiseGateEnabled;
         _pipeline.NoiseGateThreshold = _settings.NoiseGateThreshold;
         _pipeline.DenoiseStrength = _settings.DenoiseStrength;
+        _pipeline.EchoCancellationEnabled = _settings.EchoCancellationEnabled;
 
         // 应用持久化的本地监听设置（默认全关；监听输出链在管线启动时按主开关启动）
         _pipeline.MonitorApp = _settings.MonitorApp;
@@ -655,6 +658,7 @@ public partial class MainViewModel : ObservableObject
         NoiseGateEnabled = _settings.NoiseGateEnabled;
         NoiseGateThreshold = _settings.NoiseGateThreshold;
         DenoiseStrength = _settings.DenoiseStrength;
+        EchoCancellationEnabled = _settings.EchoCancellationEnabled;
         MonitorEnabled = _settings.MonitorEnabled;
         MonitorApp = _settings.MonitorApp;
         MonitorMic = _settings.MonitorMic;
@@ -723,6 +727,14 @@ public partial class MainViewModel : ObservableObject
         _pipeline.DenoiseStrength = value; // 即时应用（仅 Mic_Path）
         _settings.DenoiseStrength = value;
         // 滑块拖动属高频，不打日志（避免刷屏）
+        PersistSettings();
+    }
+
+    partial void OnEchoCancellationEnabledChanged(bool value)
+    {
+        _pipeline.EchoCancellationEnabled = value;
+        _settings.EchoCancellationEnabled = value;
+        if (!_settingsLoading) Serilog.Log.Information("消除扬声器回声: {State}", value ? "开" : "关");
         PersistSettings();
     }
 
@@ -1060,6 +1072,12 @@ public partial class MainViewModel : ObservableObject
             Serilog.Log.Information("已选择音频源: {Name}(PID {Pid})", value.Name, value.Pid);
         if (IsRunning && value != null && SelectedMic != null)
             _ = StartPipelineCommand.ExecuteAsync(null);
+        // ★ 直通模式下选新音频源：恢复 loopback 运行（喂 AEC 参考），但不混入输出。
+        //   之前 StopAppOnly 暂停了 loopback，选新源时需要恢复，否则 AEC 参考无数据。
+        else if (!IsRunning && _isMicPassthroughActive && value != null)
+        {
+            _pipeline.ResumeLoopbackForAec(value.Pid);
+        }
     }
 
     partial void OnSelectedMicChanged(MicDeviceItem? value)
@@ -1283,6 +1301,79 @@ public partial class MainViewModel : ObservableObject
                 });
                 Application.Current.Shutdown();
             }
+        }
+    }
+
+    /// <summary>
+    /// 重启 Windows 音频服务（Audiosrv + AudioEndpointBuilder）。
+    /// 用于修复 VB-Cable 设备失效（COMException 0x8889000A）等问题，无需重启电脑。
+    /// 需要管理员权限，通过 UAC 提权执行。
+    /// </summary>
+    [RelayCommand]
+    public void RestartAudioService()
+    {
+        var confirm = MessageBox.Show(
+            "将重启 Windows 音频服务（Audiosrv + AudioEndpointBuilder）。\n\n" +
+            "此操作需要管理员权限，会短暂中断所有音频播放。\n" +
+            "执行期间 VoicePipe 管线会自动停止，完成后请手动重新启动。\n\n" +
+            "是否继续？",
+            "VoicePipe - 重启音频服务", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        Serilog.Log.Information("RestartAudioService: 用户请求重启音频服务");
+
+        try
+        {
+            // 先停管线，避免音频服务重启时 COM 对象失效导致崩溃
+            _ = StopPipelineCommand.ExecuteAsync(null);
+        }
+        catch { }
+
+        // 用 PowerShell 重启服务，通过 runas 提权
+        var script = "Restart-Service -Name Audiosrv -Force; " +
+                     "Restart-Service -Name AudioEndpointBuilder -Force; " +
+                     "Write-Output 'Audio services restarted successfully'";
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "powershell.exe",
+            Arguments = $"-NoProfile -Command \"{script}\"",
+            Verb = "runas", // UAC 提权
+            UseShellExecute = true,
+            CreateNoWindow = false,
+            WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal
+        };
+
+        try
+        {
+            var proc = System.Diagnostics.Process.Start(psi);
+            if (proc != null)
+            {
+                proc.WaitForExit();
+                if (proc.ExitCode == 0)
+                {
+                    Serilog.Log.Information("RestartAudioService: 音频服务重启成功");
+                    StatusText = "音频服务已重启，请重新启动管线";
+                    MessageBox.Show(
+                        "音频服务已重启成功。\n\n请重新启动管线。",
+                        "VoicePipe", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    Serilog.Log.Warning("RestartAudioService: 音频服务重启返回非零退出码: {Code}", proc.ExitCode);
+                    StatusText = "音频服务重启可能失败";
+                }
+            }
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // 用户取消了 UAC 授权
+            Serilog.Log.Warning("RestartAudioService: 用户取消了 UAC 授权");
+            StatusText = "已取消";
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "RestartAudioService: 重启过程异常");
+            StatusText = $"重启失败: {ex.Message}";
         }
     }
 

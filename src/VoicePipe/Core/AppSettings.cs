@@ -21,6 +21,7 @@ public class AppSettings
     public bool   NoiseGateEnabled   { get; set; } = false; // Req 4.5/4.8 default OFF
     public float  NoiseGateThreshold { get; set; } = 0.02f; // Req 4.7 linear amplitude (~ -34 dBFS)
     public float  DenoiseStrength    { get; set; } = 0.85f; // 降噪干湿混合比 0~1（1=最彻底，0=纯原声）。默认 0.85 缓解人声发空
+    public bool   EchoCancellationEnabled { get; set; } = false; // 自动捕获真实播放端点，仅对选中麦克风做 AEC
 
     // 本地监听（耳机回放）：主开关 + 两个子开关。默认全关。
     public bool   MonitorEnabled     { get; set; } = false; // 监听主开关

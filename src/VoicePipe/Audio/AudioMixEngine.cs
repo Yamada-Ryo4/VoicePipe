@@ -27,7 +27,7 @@ public class AudioMixEngine : IWaveProvider, IDisposable
     // 麦克风降噪：RNNoise（RNN 神经网络）实时人声降噪，仅作用于 Mic_Path。
     // 在 FeedMic 中 Resample 到统一采样率（48000）立体声之后、写入 _micBuffer 之前原地处理。
     // 关闭时为纯直通；原生库不可用时自动降级为直通。App_Path 永不经过。(Req 4.4/4.9)
-    private readonly RnnoiseDenoiser _denoiser = new();
+    private readonly MicrophoneFrameProcessor _micProcessor = new();
 
     // 麦克风静音（会话状态，不持久化）。仅在 Read() 的 mic 项上生效，App_Path 不受影响。(Req 2.6)
     // volatile：UI/热键线程写入，音频播放线程读取，与现有增益缓存一致的无锁可见性。
@@ -106,22 +106,34 @@ public class AudioMixEngine : IWaveProvider, IDisposable
         set => _vbCableActive = value;
     }
 
-    /// <summary>降噪启用（透传到 RnnoiseDenoiser）。仅 Mic_Path。(Req 4.5/4.8)</summary>
+    /// <summary>RNNoise 降噪启用。仅 Mic_Path。(Req 4.5/4.8)</summary>
     public bool NoiseGateEnabled
     {
-        get => _denoiser.Enabled;
-        set => _denoiser.Enabled = value;
+        get => _micProcessor.DenoiseEnabled;
+        set => _micProcessor.DenoiseEnabled = value;
     }
 
     /// <summary>原生 RNNoise 库是否可用（不可用时降噪开关无效，UI 可据此提示）。</summary>
-    public bool DenoiseAvailable => _denoiser.Available;
+    public bool DenoiseAvailable => _micProcessor.DenoiseAvailable;
 
-    /// <summary>降噪强度（干湿混合比，0~1）。透传到 RnnoiseDenoiser，仅 Mic_Path。</summary>
+    /// <summary>降噪强度（干湿混合比，0~1）。仅 Mic_Path。</summary>
     public float DenoiseStrength
     {
-        get => _denoiser.WetMix;
-        set => _denoiser.WetMix = value;
+        get => _micProcessor.DenoiseWetMix;
+        set => _micProcessor.DenoiseWetMix = value;
     }
+
+    /// <summary>消除扬声器声学回声。仅 Mic_Path，处理顺序在 RNNoise 之前。</summary>
+    public bool EchoCancellationEnabled
+    {
+        get => _micProcessor.EchoCancellationEnabled;
+        set => _micProcessor.EchoCancellationEnabled = value;
+    }
+
+    public bool EchoCancellationAvailable => _micProcessor.EchoCancellationAvailable;
+
+    internal void SetAecReferenceProvider(IAecReferenceProvider? provider)
+        => _micProcessor.ReferenceProvider = provider;
 
     /// <summary>保留字段以兼容旧设置/UI 绑定；RNNoise 自动工作，不使用阈值。</summary>
     public float NoiseGateThreshold { get; set; }
@@ -194,7 +206,7 @@ public class AudioMixEngine : IWaveProvider, IDisposable
         // ★ Resample 返回缓存数组 + 有效长度，Write 用显式长度避免 ToArray()
         var (buf, len) = Resample(samples, count, srcFormat);
         // 降噪：仅 Mic_Path，重采样后、写入 _micBuffer 前原地处理（关闭/不可用时为直通）。(Req 4.4)
-        _denoiser.ProcessStereo48k(buf, len);
+        _micProcessor.ProcessStereo48k(buf, len);
         _micBuffer.Write(buf, 0, len);
     }
 
@@ -449,12 +461,19 @@ public class AudioMixEngine : IWaveProvider, IDisposable
         _appBuffer.Clear();
         _micBuffer.Clear();
         _monitorBuffer.Clear(); // ★ 清监听缓冲，切换/重启时避免残留
-        _denoiser.Reset(); // ★ 清降噪器跨调用残留（切换麦克风/重启时），避免杂音/相位跳变 (B2)
+        _micProcessor.Reset(); // 清 AEC/RNNoise 跨帧状态，避免切麦残留
+    }
+
+    /// <summary>仅重置麦克风处理状态；切麦时即使复用 Writer 也必须调用。</summary>
+    public void ResetMicProcessing()
+    {
+        _micBuffer.Clear();
+        _micProcessor.Reset();
     }
 
     /// <summary>释放降噪器持有的 RNNoise 原生状态（rnnoise_destroy）。应用退出时由管线调用。(B1)</summary>
     public void Dispose()
     {
-        _denoiser.Dispose();
+        _micProcessor.Dispose();
     }
 }

@@ -140,7 +140,7 @@
                                             BorderThickness="1"
                                             BorderBrush="{DynamicResource BorderBrush}"
                                             CornerRadius="6" Margin="0,4,0,0">
-                                        <ScrollViewer Margin="0,4" SnapsToDevicePixels="True">
+                                        <ScrollViewer Margin="0,4" SnapsToDevicePixels="True" PanningMode="VerticalOnly">
                                             <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" />
                                         </ScrollViewer>
                                     </Border>
@@ -162,7 +162,7 @@
     <Style TargetType="Slider">
         <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
         <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
-        <Setter Property="Height" Value="24"/>
+        <Setter Property="Height" Value="36"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Slider">
@@ -180,17 +180,17 @@
                         <Track x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Command="Slider.DecreaseLarge"
-                                              Opacity="0" Height="24" Focusable="False"/>
+                                              Opacity="0" Height="36" Focusable="False"/>
                             </Track.DecreaseRepeatButton>
                             <Track.IncreaseRepeatButton>
                                 <RepeatButton Command="Slider.IncreaseLarge"
-                                              Opacity="0" Height="24" Focusable="False"/>
+                                              Opacity="0" Height="36" Focusable="False"/>
                             </Track.IncreaseRepeatButton>
                             <Track.Thumb>
-                                <Thumb Width="16" Height="16" Cursor="Hand">
+                                <Thumb Width="24" Height="24" Cursor="Hand">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Ellipse Width="16" Height="16"
+                                            <Ellipse Width="24" Height="24"
                                                      Fill="{StaticResource AccentBrush}"
                                                      Stroke="{StaticResource BgDeepBrush}"
                                                      StrokeThickness="2"/>
@@ -341,9 +341,9 @@
             <Setter.Value>
                 <ControlTemplate TargetType="CheckBox">
                     <StackPanel Orientation="Horizontal" Background="Transparent">
-                        <Border x:Name="Track" Width="40" Height="22" CornerRadius="11"
+                        <Border x:Name="Track" Width="44" Height="26" CornerRadius="13"
                                 Background="{StaticResource BorderBrush}" VerticalAlignment="Center">
-                            <Border x:Name="Thumb" Width="16" Height="16" CornerRadius="8"
+                            <Border x:Name="Thumb" Width="20" Height="20" CornerRadius="10"
                                     Background="{StaticResource TextSecBrush}"
                                     HorizontalAlignment="Left" Margin="3,0,0,0"/>
                         </Border>
@@ -386,6 +386,9 @@
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Track" Property="Opacity" Value="0.85"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.75"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4"/>

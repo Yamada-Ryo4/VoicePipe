@@ -14,9 +14,9 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <!-- 版本号：与界面标题、安装包 AppVersion 保持一致。UpdateService 读程序集版本判断本地版本。 -->
-    <Version>1.2.50</Version>
-    <AssemblyVersion>1.2.50.0</AssemblyVersion>
-    <FileVersion>1.2.50.0</FileVersion>
+    <Version>1.2.51</Version>
+    <AssemblyVersion>1.2.51.0</AssemblyVersion>
+    <FileVersion>1.2.51.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,17 +25,22 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="8.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <PackageReference Include="SoundFlow.Extensions.WebRtc.Apm" Version="1.4.0" />
   </ItemGroup>
 
   <ItemGroup>
     <Resource Include="assets\voicepipe.ico" Condition="Exists('assets\voicepipe.ico')" />
   </ItemGroup>
 
-  <!-- RNNoise 原生降噪库（x64），随程序输出到运行目录供 P/Invoke 加载 -->
+  <!-- RNNoise + SpeexDSP 原生麦克风处理库（x64），随程序输出到运行目录供 P/Invoke 加载 -->
   <ItemGroup>
     <None Include="native\rnnoise.dll" Condition="Exists('native\rnnoise.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>rnnoise.dll</Link>
+    </None>
+    <None Include="native\speexdsp.dll" Condition="Exists('native\speexdsp.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>speexdsp.dll</Link>
     </None>
   </ItemGroup>
 
